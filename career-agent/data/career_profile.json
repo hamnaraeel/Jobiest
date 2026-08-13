@@ -1,0 +1,150 @@
+{
+  "_comment": "PLACEHOLDER DATA ONLY. Replace every YOUR_* value with your real, verifiable information before importing. See data/README.md. This file is shaped to match GET /profile/export so it can be sent directly to POST /profile/import.",
+
+  "profile": {
+    "full_name": "YOUR_NAME",
+    "professional_title": "YOUR_PROFESSIONAL_TITLE",
+    "email": "YOUR_EMAIL@example.com",
+    "phone": "YOUR_PHONE",
+    "city": "YOUR_CITY",
+    "country": "YOUR_COUNTRY",
+    "linkedin_url": "https://linkedin.com/in/YOUR_USERNAME",
+    "github_url": "https://github.com/YOUR_USERNAME",
+    "portfolio_url": "https://YOUR_PORTFOLIO_DOMAIN.com",
+    "current_summary": "YOUR_PROFESSIONAL_SUMMARY - a few sentences describing your background, written by you, not invented by the AI.",
+    "target_roles": ["Machine Learning Engineer", "AI Engineer", "Computer Vision Engineer"],
+    "preferred_industries": ["YOUR_PREFERRED_INDUSTRY"],
+    "preferred_locations": ["YOUR_PREFERRED_LOCATION"],
+    "remote_preference": "remote",
+    "years_of_experience": 0
+  },
+
+  "educations": [
+    {
+      "institution": "YOUR_UNIVERSITY",
+      "degree": "YOUR_DEGREE",
+      "field": "YOUR_FIELD_OF_STUDY",
+      "start_date": "2019-09-01",
+      "end_date": "2023-06-01",
+      "location": "YOUR_UNIVERSITY_LOCATION",
+      "grade": "YOUR_GRADE",
+      "relevant_coursework": ["YOUR_COURSE_1", "YOUR_COURSE_2"],
+      "thesis": "YOUR_THESIS_TITLE_IF_ANY",
+      "description": null,
+      "verified": false
+    }
+  ],
+
+  "experiences": [
+    {
+      "company": "YOUR_COMPANY",
+      "role": "YOUR_JOB_TITLE",
+      "employment_type": "full_time",
+      "location": "YOUR_JOB_LOCATION",
+      "start_date": "2023-01-01",
+      "end_date": null,
+      "currently_working": true,
+      "description": "YOUR_ROLE_DESCRIPTION",
+      "technologies": ["YOUR_TECHNOLOGY_1", "YOUR_TECHNOLOGY_2"],
+      "skills": ["YOUR_SKILL_1"],
+      "achievements": [],
+      "verified": false,
+      "bullets": [
+        {
+          "id": 1,
+          "bullet": "YOUR_BULLET_POINT_DESCRIBING_A_SPECIFIC_CONTRIBUTION",
+          "skills": ["YOUR_SKILL_1"],
+          "verified": false
+        }
+      ]
+    }
+  ],
+
+  "projects": [
+    {
+      "id": 1,
+      "name": "YOUR_PROJECT_NAME",
+      "description": "YOUR_PROJECT_DESCRIPTION",
+      "problem": "YOUR_PROJECT_PROBLEM_STATEMENT",
+      "solution": "YOUR_PROJECT_SOLUTION_APPROACH",
+      "technologies": ["YOUR_TECHNOLOGY_1", "YOUR_TECHNOLOGY_2"],
+      "skills": ["YOUR_SKILL_1"],
+      "github_url": "https://github.com/YOUR_USERNAME/YOUR_PROJECT",
+      "demo_url": null,
+      "start_date": "2023-01-01",
+      "end_date": "2023-06-01",
+      "verified": false,
+      "results": [
+        {
+          "id": 1,
+          "description": "YOUR_QUANTIFIED_RESULT",
+          "metric": "YOUR_METRIC e.g. +6.2% accuracy",
+          "verified": false
+        }
+      ]
+    }
+  ],
+
+  "skills": [
+    {
+      "id": 1,
+      "name": "YOUR_SKILL_NAME",
+      "category": "Programming",
+      "proficiency": "intermediate",
+      "years_used": 1,
+      "verified": false
+    }
+  ],
+
+  "certifications": [
+    {
+      "name": "YOUR_CERTIFICATION_NAME",
+      "issuer": "YOUR_CERTIFICATION_ISSUER",
+      "issue_date": "2024-01-01",
+      "expiry_date": null,
+      "credential_id": "YOUR_CREDENTIAL_ID",
+      "credential_url": "https://YOUR_CREDENTIAL_URL.com",
+      "verified": false
+    }
+  ],
+
+  "achievements": [
+    {
+      "title": "YOUR_ACHIEVEMENT_TITLE",
+      "description": "YOUR_ACHIEVEMENT_DESCRIPTION",
+      "date": "2024-01-01",
+      "category": "academic",
+      "metric": "YOUR_ACHIEVEMENT_METRIC",
+      "verified": false
+    }
+  ],
+
+  "research_items": [
+    {
+      "title": "YOUR_RESEARCH_TITLE",
+      "description": "YOUR_RESEARCH_DESCRIPTION",
+      "methodology": "YOUR_RESEARCH_METHODOLOGY",
+      "datasets": ["YOUR_DATASET_NAME"],
+      "models": ["YOUR_MODEL_NAME"],
+      "results": ["YOUR_RESEARCH_RESULT"],
+      "publications": ["YOUR_PUBLICATION_LINK_IF_ANY"],
+      "research_area": "YOUR_RESEARCH_AREA",
+      "technologies": ["YOUR_TECHNOLOGY_1"],
+      "verified": false
+    }
+  ],
+
+  "evidence": [
+    {
+      "source_type": "GitHub",
+      "source_name": "YOUR_GITHUB_REPO_NAME",
+      "source_url": "https://github.com/YOUR_USERNAME/YOUR_PROJECT",
+      "description": "Source code proving hands-on use of YOUR_SKILL_NAME.",
+      "verified": false,
+      "links": [
+        { "entity_type": "skill", "entity_id": 1 },
+        { "entity_type": "project", "entity_id": 1 }
+      ]
+    }
+  ]
+}
