@@ -34,3 +34,10 @@ npm-debug.log*
 # Generated resumes / applications (local artifacts, not source)
 output/
 generated/
+career-agent/data/cvs/*
+!career-agent/data/cvs/.gitkeep
+
+# LaTeX build byproducts (should never survive compile_pdf() anyway, but
+# just in case pdflatex is interrupted mid-run)
+*.aux
+*.out

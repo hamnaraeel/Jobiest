@@ -16,6 +16,7 @@ logging.basicConfig(
 from app.api import (
     achievements,
     certifications,
+    cvs,
     education,
     evidence,
     experience,
@@ -29,12 +30,13 @@ from app.api import (
 app = FastAPI(
     title="Career Agent",
     description=(
-        "Single source of truth for verified career facts, plus job ingestion, "
-        "analysis, and deterministic career-fit matching. Nothing here is ever "
-        "invented: every fact carries a `verified` flag, and every match status "
-        "traces back to specific profile evidence or is honestly marked missing/unknown."
+        "Single source of truth for verified career facts, job ingestion/analysis/"
+        "matching, and truthful, source-traceable CV customization. Nothing here is "
+        "ever invented: every fact carries a `verified` flag, every match status "
+        "traces back to specific profile evidence or is honestly marked missing/"
+        "unknown, and every generated CV bullet traces back to a real profile row."
     ),
-    version="0.2.0",
+    version="0.3.0",
 )
 
 app.include_router(profile.router)
@@ -47,6 +49,8 @@ app.include_router(achievements.router)
 app.include_router(research.router)
 app.include_router(evidence.router)
 app.include_router(jobs.router)
+app.include_router(cvs.jobs_cv_router)
+app.include_router(cvs.cvs_router)
 
 
 @app.get("/health", tags=["health"])

@@ -1,0 +1,57 @@
+{
+  "header": {
+    "name": "Test User",
+    "email": "test@example.com"
+  },
+  "summary": "Machine Learning Engineer with hands-on experience developing deep learning models for medical image segmentation using PyTorch.",
+  "skills": [
+    {
+      "category": "ML/DL",
+      "skills": [
+        "PyTorch"
+      ]
+    }
+  ],
+  "experience": [
+    {
+      "experience_id": 1,
+      "company": "Acme AI",
+      "role": "Machine Learning Engineer",
+      "location": null,
+      "start_date": "2023-01-01",
+      "end_date": null,
+      "currently_working": true,
+      "bullets": [
+        {
+          "text": "Developed deep learning models for medical image segmentation using PyTorch.",
+          "source_type": "experience_bullet",
+          "source_id": 1,
+          "verified": true
+        }
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "project_id": 1,
+      "name": "Hirschsprung Disease Segmentation",
+      "technologies": [
+        "PyTorch",
+        "Computer Vision"
+      ],
+      "github_url": null,
+      "bullets": [
+        {
+          "text": "Improved segmentation accuracy (+6.2% Dice score)",
+          "source_type": "project_result",
+          "source_id": 1,
+          "verified": true
+        }
+      ]
+    }
+  ],
+  "education": [],
+  "certifications": [],
+  "research": [],
+  "achievements": []
+}

@@ -10,14 +10,20 @@ An AI-powered job application agent, built step by step.
 - **Step 2 — Job Ingestion, Analysis & Matching**: paste a job URL or
   description in, get a deterministic, explainable fit score out. See
   [`docs/job-matching-schema.md`](docs/job-matching-schema.md).
+- **Step 3 — CV Customization, Versioning & PDF Generation**: generate a
+  job-tailored CV where every bullet traces back to a real, verified
+  profile row, validated deterministically before it's ever rendered to
+  LaTeX and compiled to PDF. See [`docs/cv-generation.md`](docs/cv-generation.md).
 
-Neither step includes CV/cover-letter generation, browser automation,
+None of these steps include cover-letter generation, browser automation,
 application submission, or autonomous agents — those come later.
 
 ## 1. Installation
 
-Requires Python 3.11+ and PostgreSQL 14+ with the [pgvector](https://github.com/pgvector/pgvector)
-extension available.
+Requires Python 3.11+, PostgreSQL 14+ with the [pgvector](https://github.com/pgvector/pgvector)
+extension available, and a LaTeX distribution providing `pdflatex` (only
+needed for actual PDF compilation in Step 3 -- everything else works
+without it).
 
 ```bash
 cd career-agent/backend
@@ -25,6 +31,21 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+On macOS, [BasicTeX](https://tug.org/mactex/morepackages.html) is a much
+smaller install than full MacTeX and is enough for the default template:
+
+```bash
+brew install --cask basictex
+# open a new terminal afterward so PATH picks up pdflatex
+```
+
+If `pdflatex` isn't installed or isn't on `PATH`, `POST /jobs/{id}/cv/generate`
+still runs the full plan/content/validation pipeline and stores the CV
+row -- it just returns a clear PDF-compilation error inside `warnings`
+instead of a `pdf_path`, rather than failing the whole request. Use
+`POST /jobs/{id}/cv/preview` (which never attempts PDF compilation) to
+review generated content without needing `pdflatex` at all.
 
 ## 2. PostgreSQL setup
 
@@ -57,16 +78,22 @@ cp .env.example .env
 ```
 DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/career_agent
 OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4o-mini
+CV_MAX_PAGES=1
+CV_STORAGE_DIR=../data/cvs
+PDFLATEX_PATH=pdflatex
 ```
 
-`OPENAI_API_KEY` powers job analysis (`POST /jobs/{id}/analyze`) and the
-optional match-explanation call. Everything else -- profile management,
-job ingestion/cleaning/storage, deduplication, the dashboard, and the
-deterministic match score itself -- works with no key set. Calling an
-AI-dependent endpoint without a key returns a clear `503` explaining
-what's missing, never a crash or a silent fallback pretending to be real
-analysis. An optional `OPENAI_MODEL` (default `gpt-4o-mini`) selects the
-model used for both AI calls.
+`OPENAI_API_KEY` powers job analysis, CV planning/content generation, and
+the optional match-explanation call. Everything else -- profile
+management, job ingestion/cleaning/storage, deduplication, the dashboard,
+and the deterministic match/CV-validation logic itself -- works with no
+key set. Calling an AI-dependent endpoint without a key returns a clear
+`503` explaining what's missing, never a crash or a silent fallback
+pretending to be real analysis. `CV_MAX_PAGES` is read by the CV
+generation service as the target page budget; `CV_STORAGE_DIR` is where
+`.tex`/`.pdf` files land (see `data/cvs/`); `PDFLATEX_PATH` lets you point
+at a non-standard `pdflatex` binary if it's not on `PATH`.
 
 ## 4. Database migration
 
@@ -247,6 +274,66 @@ python -m app.scripts.analyze_job ../data/test_job_description.txt
 Requires `OPENAI_API_KEY` set and a career profile already created.
 Prints the extracted requirements and the match result in plain text.
 
+## 7c. Step 3: CV generation, versioning, comparison
+
+Generate a tailored CV for an already-analyzed job (requires
+`OPENAI_API_KEY`; runs plan + content generation + validation + LaTeX +
+PDF compilation, and stores a new version):
+
+```bash
+curl -X POST http://localhost:8000/jobs/1/cv/generate | python3 -m json.tool
+```
+
+Preview the generated content without compiling a PDF (useful without
+`pdflatex` installed, or to review before spending a compile on it):
+
+```bash
+curl -X POST http://localhost:8000/jobs/1/cv/preview | python3 -m json.tool
+```
+
+```json
+{
+  "version_id": 1,
+  "summary": "Machine Learning Engineer with hands-on experience developing deep learning models for medical image segmentation using PyTorch.",
+  "skills": [{"category": "ML/DL", "skills": ["PyTorch"]}],
+  "experience": [{"experience_id": 1, "company": "Acme AI", "role": "Machine Learning Engineer",
+    "bullets": [{"text": "Developed deep learning models for medical image segmentation using PyTorch.",
+                 "source_type": "experience_bullet", "source_id": 1, "verified": true}]}],
+  "projects": [{"project_id": 1, "name": "Hirschsprung Disease Segmentation",
+    "bullets": [{"text": "Improved segmentation accuracy (+6.2% Dice score)",
+                 "source_type": "project_result", "source_id": 1, "verified": true}]}],
+  "education": [],
+  "warnings": []
+}
+```
+
+Every bullet carries `source_type`/`source_id`/`verified` -- see
+`docs/examples/cv_example.json` for a complete real example.
+
+List, fetch, download, and review versions:
+
+```bash
+curl "http://localhost:8000/cvs?job_id=1"
+curl http://localhost:8000/cvs/1
+curl http://localhost:8000/cvs/1/download -o cv.pdf
+curl http://localhost:8000/cvs/1/comparison | python3 -m json.tool
+```
+
+Human approval workflow -- nothing is ever auto-approved:
+
+```bash
+curl -X PATCH http://localhost:8000/cvs/1/status -H "Content-Type: application/json" -d '{"status": "approved"}'
+```
+
+`DELETE /cvs/{id}` archives a version (`status: archived`) rather than
+deleting the row or the PDF -- old versions are never destroyed
+automatically.
+
+Full Step 3 endpoint list: `POST /jobs/{id}/cv/generate`,
+`POST /jobs/{id}/cv/preview`, `GET /cvs`, `GET /cvs/{id}`,
+`GET /cvs/{id}/download`, `GET /cvs/{id}/comparison`,
+`PATCH /cvs/{id}/status`, `DELETE /cvs/{id}`.
+
 ## 8. Testing
 
 Tests run against a real PostgreSQL database (with pgvector) — point
@@ -259,9 +346,13 @@ pytest -v
 ```
 
 No `OPENAI_API_KEY` is needed to run the suite -- every test that would
-otherwise call OpenAI mocks the client (`pytest-mock`'s `mocker` fixture)
-and every test that would otherwise hit a real URL mocks `requests.get`.
-Tests never depend on real network or API calls.
+otherwise call OpenAI mocks the client (`pytest-mock`'s `mocker` fixture,
+or a hand-built fake client for the CV generation tests) and every test
+that would otherwise hit a real URL mocks `requests.get`. Tests never
+depend on real network or API calls. PDF-compilation tests are skipped
+automatically (`pytest.mark.skipif`) when `pdflatex` isn't on `PATH` --
+everything else in the CV pipeline (planning, content generation,
+validation, LaTeX rendering/escaping) is still fully tested either way.
 
 ## Project structure
 
@@ -270,43 +361,54 @@ career-agent/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py               FastAPI app, router registration, logging config
-│   │   ├── config.py              Settings (DATABASE_URL, OPENAI_API_KEY, OPENAI_MODEL)
-│   │   ├── api/                   One router per resource (incl. jobs.py)
+│   │   ├── config.py              Settings (incl. CV_MAX_PAGES, CV_STORAGE_DIR, PDFLATEX_PATH)
+│   │   ├── api/                   One router per resource (incl. jobs.py, cvs.py)
 │   │   ├── models/                SQLAlchemy models + shared enums
 │   │   ├── schemas/                Pydantic Create/Update/Read schemas
 │   │   ├── services/
-│   │   │   ├── profile_service.py       Step 1: CRUD, export/import
-│   │   │   ├── validation_service.py    Step 1: evidence lookups, truth rules
-│   │   │   ├── job_ingestion_service.py Step 2: fetch/clean/store/dedup
-│   │   │   ├── job_parser.py            Step 2: URL fetch + HTML cleaning
-│   │   │   ├── job_analysis_service.py  Step 2: AI extraction -> requirements
-│   │   │   └── job_matching_service.py  Step 2: deterministic scoring engine
+│   │   │   ├── profile_service.py         Step 1: CRUD, export/import
+│   │   │   ├── validation_service.py      Step 1: evidence lookups, truth rules
+│   │   │   ├── job_ingestion_service.py   Step 2: fetch/clean/store/dedup
+│   │   │   ├── job_parser.py              Step 2: URL fetch + HTML cleaning
+│   │   │   ├── job_analysis_service.py    Step 2: AI extraction -> requirements
+│   │   │   ├── job_matching_service.py    Step 2: deterministic scoring engine
+│   │   │   ├── cv_customization_service.py Step 3: plan -> content -> assemble orchestration
+│   │   │   ├── cv_validation_service.py    Step 3: deterministic hallucination detection
+│   │   │   ├── cv_render_service.py        Step 3: LaTeX escaping/rendering + pdflatex
+│   │   │   └── cv_comparison_service.py    Step 3: change tracking + comparison
 │   │   ├── ai/
 │   │   │   ├── client.py          OpenAI client + config-error handling
-│   │   │   ├── prompts.py         Versioned prompts (JOB_ANALYSIS_PROMPT_V1, ...)
-│   │   │   └── structured_outputs.py  Pydantic schemas the LLM output must match
+│   │   │   ├── prompts.py         Step 2 prompts (JOB_ANALYSIS_PROMPT_V1, ...)
+│   │   │   ├── structured_outputs.py  Step 2 LLM output schemas
+│   │   │   ├── cv_prompts.py       Step 3 prompts (CV_PLAN_PROMPT_V1, ...)
+│   │   │   └── cv_structured_outputs.py  Step 3 LLM output schemas
 │   │   ├── scripts/
-│   │   │   └── analyze_job.py     Manual end-to-end demo script
+│   │   │   └── analyze_job.py     Manual end-to-end demo script (Step 2)
 │   │   └── db/                    Engine/session, declarative Base
-│   ├── alembic/                   Migrations (Step 1 schema, then Step 2 schema)
+│   ├── alembic/                   Migrations (Step 1, then Step 2, then Step 3 schema)
 │   ├── tests/                     pytest suite
 │   ├── requirements.txt
 │   └── .env.example
+├── cv_templates/
+│   ├── ats/ml_engineer.tex        Default ATS-friendly LaTeX template
+│   └── README.md                  How the template placeholder system works
 ├── data/
 │   ├── career_profile.json        Placeholder seed data
 │   ├── test_job_description.txt   Sample job posting for the demo script
+│   ├── cvs/                       Generated .tex/.pdf output (job_{id}/cv_v{n}.*)
 │   └── README.md                  How to fill in career_profile.json
 ├── docs/
 │   ├── career-profile-schema.md   Step 1: full schema + verification rules
-│   └── job-matching-schema.md     Step 2: dedup, scoring, match statuses
+│   ├── job-matching-schema.md     Step 2: dedup, scoring, match statuses
+│   ├── cv-generation.md           Step 3: pipeline, validation, versioning, approval
+│   └── examples/                  Real generated cv_example.json / cv_example.tex
 └── README.md
 ```
 
 ## What's next (not built yet)
 
-CV tailoring, cover letter generation, a user-approval workflow, browser
-automation for application submission, and application/outcome tracking.
-The schema is deliberately structured (foreign keys, evidence links,
-reserved embedding columns, `get_relevant_career_data()` isolated behind
-one function) so those steps can be added without reshaping what already
-exists.
+Cover letter generation, company-specific motivation/application-answer
+generation, browser automation for application submission, and
+application/outcome tracking. `CVVersion` (id, status, PDF path, JSON
+content, match scores, job id) is the exact handoff surface a future step
+would consume -- nothing about it needs to change shape to support that.

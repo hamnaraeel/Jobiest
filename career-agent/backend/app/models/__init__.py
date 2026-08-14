@@ -15,3 +15,6 @@ from app.models.evidence import Evidence, EvidenceLink  # noqa: F401
 from app.models.job import Job  # noqa: F401
 from app.models.job_requirement import JobRequirement  # noqa: F401
 from app.models.job_match import JobMatch  # noqa: F401
+from app.models.cv_version import CVVersion  # noqa: F401
+from app.models.cv_section import CVSection  # noqa: F401
+from app.models.cv_change import CVChange  # noqa: F401

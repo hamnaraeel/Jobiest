@@ -174,7 +174,7 @@ def get_relevant_career_data(db: Session, profile_id: int) -> ProfileContext:
     )
 
 
-def _lookup_skill(ctx: ProfileContext, name: str) -> SkillEvidence | None:
+def lookup_skill(ctx: ProfileContext, name: str) -> SkillEvidence | None:
     key = normalize_skill(name)
     if key in ctx.skill_index:
         return ctx.skill_index[key]
@@ -211,7 +211,7 @@ class RequirementEvaluation:
 
 def _evaluate_skill(req: JobRequirement, ctx: ProfileContext) -> RequirementEvaluation:
     name = req.skill_name or req.requirement_text
-    found = _lookup_skill(ctx, name)
+    found = lookup_skill(ctx, name)
     if found is None:
         return RequirementEvaluation(req, MatchStatus.MISSING, reason="Not found in career profile.")
     if found.verified:
@@ -373,7 +373,7 @@ def _keyword_alignment_score(job: Job, ctx: ProfileContext) -> float:
         return 1.0
     matched = 0
     for keyword in job.keywords:
-        if _lookup_skill(ctx, keyword) is not None:
+        if lookup_skill(ctx, keyword) is not None:
             matched += 1
     return min(1.0, matched / len(job.keywords))
 

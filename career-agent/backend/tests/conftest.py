@@ -70,3 +70,59 @@ def profile(client, profile_payload):
     resp = client.post("/profile", json=profile_payload)
     assert resp.status_code == 201
     return resp.json()
+
+
+@pytest.fixture
+def rich_profile(client, profile):
+    """A profile with one verified skill, one experience (with a bullet),
+    and one project (with a result) -- enough real, verified data for CV
+    generation tests to select from and validate against."""
+
+    skill = client.post("/skills", json={
+        "profile_id": profile["id"], "name": "PyTorch", "category": "ML/DL",
+        "proficiency": "advanced", "years_used": 2, "verified": True,
+    }).json()
+
+    experience = client.post("/experience", json={
+        "profile_id": profile["id"], "company": "Acme AI", "role": "ML Engineer",
+        "employment_type": "full_time", "start_date": "2023-01-01", "currently_working": True,
+        "technologies": ["PyTorch"], "skills": ["PyTorch"], "verified": True,
+        "bullets": [{
+            "bullet": "Developed deep learning models for medical image segmentation using PyTorch.",
+            "skills": ["PyTorch"], "verified": True,
+        }],
+    }).json()
+
+    project = client.post("/projects", json={
+        "profile_id": profile["id"], "name": "Hirschsprung Disease Segmentation",
+        "technologies": ["PyTorch", "Computer Vision"], "skills": ["PyTorch", "Computer Vision"],
+        "verified": True,
+        "results": [{"description": "Improved segmentation accuracy", "metric": "+6.2% Dice score", "verified": True}],
+    }).json()
+
+    return {"profile": profile, "skill": skill, "experience": experience, "project": project}
+
+
+@pytest.fixture
+def make_analyzed_job(db_session):
+    """Factory fixture: builds a Job with extracted_at already set (so it
+    looks already analyzed) plus the given JobRequirement rows, bypassing
+    the AI call -- for tests that only need to exercise matching/CV
+    generation."""
+
+    def _make(title="ML Engineer", company="Acme", requirements=()):
+        from datetime import datetime, timezone
+
+        from app.models.job import Job
+        from app.models.job_requirement import JobRequirement
+
+        job = Job(title=title, company=company, description="d", extracted_at=datetime.now(timezone.utc))
+        db_session.add(job)
+        db_session.flush()
+        for req in requirements:
+            db_session.add(JobRequirement(job_id=job.id, **req))
+        db_session.commit()
+        db_session.refresh(job)
+        return job
+
+    return _make

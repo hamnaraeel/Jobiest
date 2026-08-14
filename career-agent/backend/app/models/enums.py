@@ -134,3 +134,34 @@ class Recommendation(str, enum.Enum):
     APPLY = "apply"
     MAYBE = "maybe"
     SKIP = "skip"
+
+
+# --- Step 3: CV customization, versioning, and PDF generation ---
+
+
+class CVStatus(str, enum.Enum):
+    DRAFT = "draft"
+    VALIDATED = "validated"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    ARCHIVED = "archived"
+
+
+class CVSectionType(str, enum.Enum):
+    SUMMARY = "summary"
+    SKILLS = "skills"
+    EXPERIENCE = "experience"
+    PROJECTS = "projects"
+    RESEARCH = "research"
+    EDUCATION = "education"
+    CERTIFICATIONS = "certifications"
+    ACHIEVEMENTS = "achievements"
+
+
+class CVChangeType(str, enum.Enum):
+    ADDED = "added"
+    REMOVED = "removed"
+    REWRITTEN = "rewritten"
+    REORDERED = "reordered"
+    EMPHASIZED = "emphasized"
+    DE_EMPHASIZED = "de_emphasized"
