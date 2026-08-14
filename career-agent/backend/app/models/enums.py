@@ -69,3 +69,68 @@ class AchievementCategory(str, enum.Enum):
     PUBLICATION = "publication"
     ACADEMIC = "academic"
     PROFESSIONAL = "professional"
+
+
+# --- Step 2: job ingestion / analysis / matching ---
+
+
+class JobEmploymentType(str, enum.Enum):
+    """Deliberately separate from EmploymentType (Step 1's *my* work
+    history) since job postings use a different value set (e.g. temporary,
+    unknown) and conflating the two would let a job posting's employment
+    type silently masquerade as a fact about my own employment history."""
+
+    FULL_TIME = "full_time"
+    PART_TIME = "part_time"
+    CONTRACT = "contract"
+    INTERNSHIP = "internship"
+    TEMPORARY = "temporary"
+    UNKNOWN = "unknown"
+
+
+class WorkplaceType(str, enum.Enum):
+    ONSITE = "onsite"
+    HYBRID = "hybrid"
+    REMOTE = "remote"
+    UNKNOWN = "unknown"
+
+
+class JobStatus(str, enum.Enum):
+    DISCOVERED = "discovered"
+    ANALYZED = "analyzed"
+    MATCHED = "matched"
+    SHORTLISTED = "shortlisted"
+    SKIPPED = "skipped"
+
+
+class RequirementCategory(str, enum.Enum):
+    TECHNICAL_SKILL = "technical_skill"
+    SOFT_SKILL = "soft_skill"
+    EDUCATION = "education"
+    EXPERIENCE = "experience"
+    CERTIFICATION = "certification"
+    RESPONSIBILITY = "responsibility"
+    LOCATION = "location"
+    WORK_AUTHORIZATION = "work_authorization"
+    LANGUAGE = "language"
+    OTHER = "other"
+
+
+class RequirementImportance(str, enum.Enum):
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class MatchStatus(str, enum.Enum):
+    MATCHED = "matched"
+    PARTIAL = "partial"
+    MISSING = "missing"
+    UNKNOWN = "unknown"
+
+
+class Recommendation(str, enum.Enum):
+    APPLY = "apply"
+    MAYBE = "maybe"
+    SKIP = "skip"

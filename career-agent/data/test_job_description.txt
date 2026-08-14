@@ -1,0 +1,36 @@
+Machine Learning Engineer
+Example Company -- Islamabad, Pakistan (Remote friendly)
+
+About the role:
+Example Company is building computer vision systems for medical imaging analysis.
+We are looking for a Machine Learning Engineer to join our small applied ML team
+and help take research prototypes into reliable, deployed systems.
+
+Responsibilities:
+- Develop and deploy deep learning models for computer vision tasks, particularly
+  image segmentation and classification.
+- Work with large medical imaging datasets, including preprocessing and augmentation
+  pipelines.
+- Collaborate with research staff to translate published architectures into
+  production-ready implementations.
+- Write and maintain training/evaluation pipelines and track experiment results.
+- Participate in code review and contribute to the team's engineering practices.
+
+Requirements:
+- 1+ years of professional or research experience in machine learning or a closely
+  related field.
+- Strong hands-on experience with Python.
+- Strong hands-on experience with PyTorch.
+- Demonstrated experience with computer vision (e.g. segmentation, classification,
+  or object detection).
+- Bachelor's degree in Computer Science, Electrical Engineering, or a related field.
+
+Preferred:
+- Experience with transformer-based architectures (e.g. Swin Transformer, ViT) is a
+  plus.
+- Familiarity with Docker is nice to have.
+- Experience with AWS is a bonus but not required.
+
+Location: Islamabad, Pakistan. Remote work is supported for this role.
+
+Example Company is an equal opportunity employer.

@@ -12,3 +12,6 @@ from app.models.certification import Certification  # noqa: F401
 from app.models.achievement import Achievement  # noqa: F401
 from app.models.research import Research  # noqa: F401
 from app.models.evidence import Evidence, EvidenceLink  # noqa: F401
+from app.models.job import Job  # noqa: F401
+from app.models.job_requirement import JobRequirement  # noqa: F401
+from app.models.job_match import JobMatch  # noqa: F401

@@ -1,16 +1,18 @@
-# Career Agent — Step 1: Career Profile & Knowledge Base
+# Career Agent
 
-The foundation of an AI-powered job application agent: a structured,
-verified store of your career facts (education, experience, projects,
-skills, research, certifications, achievements) with an evidence system
-that prevents any future AI layer from inventing experience you don't
-have.
+An AI-powered job application agent, built step by step.
 
-This step deliberately does **not** include job scraping, browser
-automation, application submission, CV/cover-letter generation, or
-autonomous agents — those come later. See
-[`docs/career-profile-schema.md`](docs/career-profile-schema.md) for the
-full data model and the truth/verification rules.
+- **Step 1 — Career Profile & Knowledge Base**: a structured, verified
+  store of your career facts (education, experience, projects, skills,
+  research, certifications, achievements) with an evidence system that
+  prevents any future AI layer from inventing experience you don't have.
+  See [`docs/career-profile-schema.md`](docs/career-profile-schema.md).
+- **Step 2 — Job Ingestion, Analysis & Matching**: paste a job URL or
+  description in, get a deterministic, explainable fit score out. See
+  [`docs/job-matching-schema.md`](docs/job-matching-schema.md).
+
+Neither step includes CV/cover-letter generation, browser automation,
+application submission, or autonomous agents — those come later.
 
 ## 1. Installation
 
@@ -57,8 +59,14 @@ DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/career_agent
 OPENAI_API_KEY=
 ```
 
-`OPENAI_API_KEY` is not used by anything in this step — it's reserved for
-the CV/cover-letter generation step that comes later.
+`OPENAI_API_KEY` powers job analysis (`POST /jobs/{id}/analyze`) and the
+optional match-explanation call. Everything else -- profile management,
+job ingestion/cleaning/storage, deduplication, the dashboard, and the
+deterministic match score itself -- works with no key set. Calling an
+AI-dependent endpoint without a key returns a clear `503` explaining
+what's missing, never a crash or a silent fallback pretending to be real
+analysis. An optional `OPENAI_MODEL` (default `gpt-4o-mini`) selects the
+model used for both AI calls.
 
 ## 4. Database migration
 
@@ -148,10 +156,96 @@ Export the full profile:
 curl http://localhost:8000/profile/export | python3 -m json.tool
 ```
 
-Full endpoint list: `GET/POST/PUT /profile`, `GET /profile/export`,
+Full Step 1 endpoint list: `GET/POST/PUT /profile`, `GET /profile/export`,
 `POST /profile/import`, and `GET/POST` for `/skills`, `/education`,
 `/experience`, `/projects`, `/certifications`, `/achievements`,
 `/research`, `/evidence`.
+
+## 7b. Step 2: jobs, analysis, matching
+
+Ingest a job from a pasted description (works with no API key):
+
+```bash
+curl -X POST http://localhost:8000/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"description": "Machine Learning Engineer at Example Company. Requirements: 2+ years Python, PyTorch, Computer Vision. Preferred: AWS, Docker."}'
+```
+
+...or from a URL (fetched, cleaned, and stored; returns
+`fetch_notice: {"status": "manual_input_required", ...}` instead of
+failing if the page can't be retrieved or looks JavaScript-only):
+
+```bash
+curl -X POST http://localhost:8000/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com/careers/ml-engineer"}'
+```
+
+Run AI analysis (requires `OPENAI_API_KEY`; extracts requirements, one
+LLM call):
+
+```bash
+curl -X POST http://localhost:8000/jobs/1/analyze
+```
+
+Run the deterministic match against your career profile (auto-runs
+analysis first if it hasn't happened yet; works with no API key once a
+job is already analyzed -- the explanation prose just falls back to a
+template):
+
+```bash
+curl -X POST http://localhost:8000/jobs/1/match | python3 -m json.tool
+```
+
+```json
+{
+  "job": {"title": "Machine Learning Engineer", "company": "Example Company", "location": null},
+  "score": 88,
+  "recommendation": "apply",
+  "strengths": ["Python", "PyTorch", "Computer Vision"],
+  "weaknesses": ["AWS"],
+  "matched_requirements": [
+    {"requirement": "Python", "category": "technical_skill", "importance": "high",
+     "required": true, "status": "matched", "evidence": ["Skill: Python"], "reason": null}
+  ],
+  "partial_requirements": [],
+  "missing_requirements": [
+    {"requirement": "AWS", "category": "technical_skill", "importance": "medium",
+     "required": false, "status": "missing", "evidence": [], "reason": "Not found in career profile."}
+  ],
+  "unknown_requirements": [],
+  "critical_gaps": [],
+  "summary": "Overall alignment score: 88/100 (apply). Strong matches: Python, PyTorch, Computer Vision.",
+  "created_at": "2026-01-01T12:00:00Z",
+  "updated_at": "2026-01-01T12:00:00Z"
+}
+```
+
+Retrieve the stored result later without recomputing:
+
+```bash
+curl http://localhost:8000/jobs/1/match
+```
+
+Browse the dashboard:
+
+```bash
+curl "http://localhost:8000/jobs?min_score=80&recommendation=apply"
+curl "http://localhost:8000/jobs?company=Example&search=PyTorch"
+```
+
+Full Step 2 endpoint list: `POST/GET /jobs`, `GET /jobs/{id}`,
+`GET /jobs/{id}/requirements`, `POST /jobs/{id}/analyze`,
+`POST/GET /jobs/{id}/match`.
+
+### Manual end-to-end demo
+
+```bash
+python -m app.scripts.analyze_job ../data/test_job_description.txt
+```
+
+Requires `OPENAI_API_KEY` set and a career profile already created.
+Prints the extracted requirements and the match result in plain text.
 
 ## 8. Testing
 
@@ -164,38 +258,55 @@ export DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/caree
 pytest -v
 ```
 
+No `OPENAI_API_KEY` is needed to run the suite -- every test that would
+otherwise call OpenAI mocks the client (`pytest-mock`'s `mocker` fixture)
+and every test that would otherwise hit a real URL mocks `requests.get`.
+Tests never depend on real network or API calls.
+
 ## Project structure
 
 ```
 career-agent/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py               FastAPI app, router registration
-│   │   ├── config.py              Settings (DATABASE_URL, OPENAI_API_KEY)
-│   │   ├── api/                   One router per resource
+│   │   ├── main.py               FastAPI app, router registration, logging config
+│   │   ├── config.py              Settings (DATABASE_URL, OPENAI_API_KEY, OPENAI_MODEL)
+│   │   ├── api/                   One router per resource (incl. jobs.py)
 │   │   ├── models/                SQLAlchemy models + shared enums
 │   │   ├── schemas/                Pydantic Create/Update/Read schemas
 │   │   ├── services/
-│   │   │   ├── profile_service.py     CRUD, export/import
-│   │   │   └── validation_service.py  Evidence lookups, truth rules
+│   │   │   ├── profile_service.py       Step 1: CRUD, export/import
+│   │   │   ├── validation_service.py    Step 1: evidence lookups, truth rules
+│   │   │   ├── job_ingestion_service.py Step 2: fetch/clean/store/dedup
+│   │   │   ├── job_parser.py            Step 2: URL fetch + HTML cleaning
+│   │   │   ├── job_analysis_service.py  Step 2: AI extraction -> requirements
+│   │   │   └── job_matching_service.py  Step 2: deterministic scoring engine
+│   │   ├── ai/
+│   │   │   ├── client.py          OpenAI client + config-error handling
+│   │   │   ├── prompts.py         Versioned prompts (JOB_ANALYSIS_PROMPT_V1, ...)
+│   │   │   └── structured_outputs.py  Pydantic schemas the LLM output must match
+│   │   ├── scripts/
+│   │   │   └── analyze_job.py     Manual end-to-end demo script
 │   │   └── db/                    Engine/session, declarative Base
-│   ├── alembic/                   Migrations
+│   ├── alembic/                   Migrations (Step 1 schema, then Step 2 schema)
 │   ├── tests/                     pytest suite
 │   ├── requirements.txt
 │   └── .env.example
 ├── data/
 │   ├── career_profile.json        Placeholder seed data
-│   └── README.md                  How to fill it in
+│   ├── test_job_description.txt   Sample job posting for the demo script
+│   └── README.md                  How to fill in career_profile.json
 ├── docs/
-│   └── career-profile-schema.md   Full schema + verification rules
+│   ├── career-profile-schema.md   Step 1: full schema + verification rules
+│   └── job-matching-schema.md     Step 2: dedup, scoring, match statuses
 └── README.md
 ```
 
 ## What's next (not built yet)
 
-Job scraping, job/CV matching and scoring, CV tailoring, cover letter
-generation, user approval workflow, browser automation for application
-submission, and application/outcome tracking. The schema here is
-deliberately structured (foreign keys, evidence links, reserved embedding
-columns) so those steps can be added without reshaping what already
+CV tailoring, cover letter generation, a user-approval workflow, browser
+automation for application submission, and application/outcome tracking.
+The schema is deliberately structured (foreign keys, evidence links,
+reserved embedding columns, `get_relevant_career_data()` isolated behind
+one function) so those steps can be added without reshaping what already
 exists.
