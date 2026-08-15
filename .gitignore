@@ -36,6 +36,7 @@ output/
 generated/
 career-agent/data/cvs/*
 !career-agent/data/cvs/.gitkeep
+!career-agent/data/cvs/README.md
 
 # LaTeX build byproducts (should never survive compile_pdf() anyway, but
 # just in case pdflatex is interrupted mid-run)
