@@ -165,3 +165,26 @@ class CVChangeType(str, enum.Enum):
     REORDERED = "reordered"
     EMPHASIZED = "emphasized"
     DE_EMPHASIZED = "de_emphasized"
+
+
+# --- Step 4: cover letters & application question answers ---
+
+# Cover letters and application answers go through the identical
+# draft -> validated -> approved -> rejected -> archived workflow as a CV
+# (Step 3) -- reusing CVStatus directly rather than defining an identical
+# enum a second time. The alias exists purely so call sites read clearly.
+ApplicationMaterialStatus = CVStatus
+
+
+class ApplicationQuestionType(str, enum.Enum):
+    MOTIVATION = "motivation"
+    EXPERIENCE = "experience"
+    TECHNICAL = "technical"
+    BEHAVIORAL = "behavioral"
+    COMPANY = "company"
+    SALARY = "salary"
+    AVAILABILITY = "availability"
+    RELOCATION = "relocation"
+    AUTHORIZATION = "authorization"
+    GENERAL = "general"
+    UNKNOWN = "unknown"

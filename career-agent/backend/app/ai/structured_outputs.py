@@ -27,3 +27,19 @@ class JobAnalysisResult(BaseModel):
 
 class MatchExplanationResult(BaseModel):
     reasoning_summary: str
+
+
+# --- Step 4: cover letters & application answers (Ollama-backed) ----------
+
+
+class CoverLetterOutput(BaseModel):
+    opening: str
+    role_alignment: str
+    experience_alignment: str
+    company_alignment: str
+    closing: str
+    full_text: str
+
+
+class ApplicationAnswerOutput(BaseModel):
+    answer: str

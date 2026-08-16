@@ -13,11 +13,11 @@ from app.services.job_matching_service import ProfileContext, lookup_skill, norm
 NUMBER_PATTERN = re.compile(r"\d+(?:\.\d+)?%?x?\b")
 
 
-def _numbers_in(text: str) -> set[str]:
+def numbers_in(text: str) -> set[str]:
     return set(NUMBER_PATTERN.findall(text.lower()))
 
 
-def _matching_terms(text: str, candidate_terms: set[str]) -> set[str]:
+def matching_terms(text: str, candidate_terms: set[str]) -> set[str]:
     """Which of `candidate_terms` (already normalized) appear as a
     normalized substring inside `text`."""
     normalized_text = f" {normalize_skill(text)} "
@@ -87,17 +87,17 @@ def validate_bullets(
         original = original_text_by_id[source_id]
         rewritten = bullet.rewritten_text
 
-        original_numbers = _numbers_in(original)
-        rewritten_numbers = _numbers_in(rewritten)
+        original_numbers = numbers_in(original)
+        rewritten_numbers = numbers_in(rewritten)
         introduced_numbers = rewritten_numbers - original_numbers
 
         candidate_terms = set(ctx.skill_index.keys()) | watch_normalized | {
             normalize_skill(t) for t in known_technologies_by_id.get(source_id, set())
         }
-        original_tech = _matching_terms(original, candidate_terms) | {
+        original_tech = matching_terms(original, candidate_terms) | {
             normalize_skill(t) for t in known_technologies_by_id.get(source_id, set())
         }
-        rewritten_tech = _matching_terms(rewritten, candidate_terms)
+        rewritten_tech = matching_terms(rewritten, candidate_terms)
         introduced_tech = rewritten_tech - original_tech
 
         if introduced_numbers:

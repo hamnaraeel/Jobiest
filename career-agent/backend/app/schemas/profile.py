@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl
 
@@ -23,6 +23,14 @@ class CareerProfileBase(BaseModel):
     remote_preference: RemotePreference | None = None
     years_of_experience: float | None = Field(default=None, ge=0, le=80)
 
+    # Never auto-populated -- see CareerProfile model docstring. Only a
+    # human setting these explicitly (via PUT /profile) makes generated
+    # application answers about them anything but "Manual input required".
+    salary_expectation: str | None = None
+    work_authorization: str | None = None
+    relocation_preference: str | None = None
+    availability_date: date | None = None
+
 
 class CareerProfileCreate(CareerProfileBase):
     pass
@@ -44,6 +52,10 @@ class CareerProfileUpdate(BaseModel):
     preferred_locations: list[str] | None = None
     remote_preference: RemotePreference | None = None
     years_of_experience: float | None = Field(default=None, ge=0, le=80)
+    salary_expectation: str | None = None
+    work_authorization: str | None = None
+    relocation_preference: str | None = None
+    availability_date: date | None = None
 
 
 class CareerProfileRead(CareerProfileBase):

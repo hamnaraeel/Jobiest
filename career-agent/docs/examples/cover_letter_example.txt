@@ -1,0 +1,9 @@
+I am writing to express my interest in the Machine Learning Engineer position at Example Company. This role's focus on computer vision aligns closely with my hands-on project experience, and I believe my background developing PyTorch-based deep learning systems would let me contribute to your team from day one.
+
+At Acme AI, I developed deep learning models for medical image segmentation using PyTorch, working directly with the kind of computer vision problems this role involves. This work required building reliable training pipelines, working with real-world medical imaging data, and iterating carefully on model architecture to get results that could be trusted in a sensitive domain. That experience taught me how to move deliberately from a research idea to a working, production-relevant system.
+
+On my own initiative, I also carried out the Hirschsprung Disease Segmentation project, applying PyTorch and computer vision techniques to a real medical imaging problem and improving segmentation accuracy on that dataset. This project deepened my understanding of the practical challenges in medical image segmentation specifically, from data preparation through to evaluating model output in a way that is meaningful for the underlying clinical problem.
+
+The role's emphasis on computer vision closely matches this background, and I am confident my practical experience with PyTorch-based model development would translate well to this position. I am particularly drawn to roles where computer vision work has a concrete, well-defined problem behind it, which is exactly the kind of work I have focused on so far.
+
+Thank you for considering my application -- I would welcome the opportunity to discuss how my background fits this role in more detail.

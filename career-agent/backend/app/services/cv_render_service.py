@@ -209,21 +209,25 @@ class CompileResult:
     log_excerpt: str | None = None
 
 
-def _resolve_storage_path(job_id: int, filename: str) -> Path:
-    base = (Path(__file__).resolve().parents[3] / "backend" / get_settings().cv_storage_dir).resolve()
-    job_dir = (base / f"job_{job_id}").resolve()
-    if base not in job_dir.parents and job_dir != base:
-        raise PathSecurityError("Resolved CV storage path escapes the configured storage directory.")
-    target = (job_dir / filename).resolve()
-    if job_dir not in target.parents:
-        raise PathSecurityError("Resolved CV file path escapes the job's storage directory.")
+def _resolve_storage_path(base_dir_setting: str, subdir: str, filename: str) -> Path:
+    base = (Path(__file__).resolve().parents[3] / "backend" / base_dir_setting).resolve()
+    target_dir = (base / subdir).resolve()
+    if base not in target_dir.parents and target_dir != base:
+        raise PathSecurityError("Resolved storage path escapes the configured storage directory.")
+    target = (target_dir / filename).resolve()
+    if target_dir not in target.parents:
+        raise PathSecurityError("Resolved file path escapes its storage directory.")
     return target
 
 
-def compile_pdf(latex_source: str, job_id: int, version_number: int) -> CompileResult:
+def compile_latex_to_pdf(latex_source: str, base_dir_setting: str, subdir: str, filename_stem: str) -> CompileResult:
+    """Generic controlled LaTeX -> PDF compilation, used by both CV
+    generation (Step 3) and cover letter generation (Step 4) so the
+    compile/validate/cleanup logic exists exactly once."""
+
     settings = get_settings()
-    tex_path = _resolve_storage_path(job_id, f"cv_v{version_number}.tex")
-    pdf_path = _resolve_storage_path(job_id, f"cv_v{version_number}.pdf")
+    tex_path = _resolve_storage_path(base_dir_setting, subdir, f"{filename_stem}.tex")
+    pdf_path = _resolve_storage_path(base_dir_setting, subdir, f"{filename_stem}.pdf")
     tex_path.parent.mkdir(parents=True, exist_ok=True)
     tex_path.write_text(latex_source, encoding="utf-8")
 
@@ -246,9 +250,14 @@ def compile_pdf(latex_source: str, job_id: int, version_number: int) -> CompileR
         return CompileResult(success=False, error="pdflatex produced an empty PDF file.")
 
     for ext in (".aux", ".log", ".out"):
-        (tex_path.parent / f"cv_v{version_number}{ext}").unlink(missing_ok=True)
+        (tex_path.parent / f"{filename_stem}{ext}").unlink(missing_ok=True)
 
     return CompileResult(success=True, pdf_path=str(pdf_path))
+
+
+def compile_pdf(latex_source: str, job_id: int, version_number: int) -> CompileResult:
+    settings = get_settings()
+    return compile_latex_to_pdf(latex_source, settings.cv_storage_dir, f"job_{job_id}", f"cv_v{version_number}")
 
 
 def extract_pdf_text(pdf_path: str) -> str:
@@ -262,3 +271,34 @@ def count_pdf_pages(pdf_path: str) -> int:
     from pypdf import PdfReader
 
     return len(PdfReader(pdf_path).pages)
+
+
+def render_cover_letter_to_latex(name: str, contact_parts: list[str], date_str: str, company: str, body_text: str) -> str:
+    """Same controlled-template approach as render_cv_to_latex: the LLM
+    only ever produced `body_text` (already assembled from validated
+    structured output) -- everything else is Python string-building with
+    mandatory escaping, substituted into cv_templates/cover_letter/standard.tex."""
+
+    template_path = (TEMPLATES_DIR / "cover_letter" / "standard.tex").resolve()
+    if TEMPLATES_DIR.resolve() not in template_path.parents:
+        raise PathSecurityError("Template path escapes cv_templates/")
+    template = template_path.read_text(encoding="utf-8")
+
+    contact_line = " \\quad|\\quad ".join(escape_latex(p) for p in contact_parts if p)
+    paragraphs = "\n\n".join(escape_latex(p) for p in body_text.split("\n\n") if p.strip())
+
+    return (
+        template
+        .replace("{{NAME}}", escape_latex(name))
+        .replace("{{CONTACT_LINE}}", contact_line)
+        .replace("{{DATE}}", escape_latex(date_str))
+        .replace("{{COMPANY}}", escape_latex(company))
+        .replace("{{BODY}}", paragraphs)
+    )
+
+
+def compile_cover_letter_pdf(latex_source: str, job_id: int, version_number: int) -> CompileResult:
+    settings = get_settings()
+    return compile_latex_to_pdf(
+        latex_source, settings.application_materials_dir, f"job_{job_id}", f"cover_letter_v{version_number}"
+    )

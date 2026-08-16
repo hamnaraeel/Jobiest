@@ -32,6 +32,16 @@ class CareerProfile(Base, TimestampMixin):
     remote_preference: Mapped[RemotePreference | None] = mapped_column(Enum(RemotePreference, name="remote_preference"))
     years_of_experience: Mapped[float | None] = mapped_column(Float)
 
+    # Future-compatible application preferences (Step 4). Deliberately
+    # never auto-populated by any service -- these exist only so a human
+    # can explicitly set them; until then, generated answers about salary,
+    # work authorization, relocation, or availability must say "Manual
+    # input required" rather than guessing.
+    salary_expectation: Mapped[str | None] = mapped_column(String(255))
+    work_authorization: Mapped[str | None] = mapped_column(String(255))
+    relocation_preference: Mapped[str | None] = mapped_column(String(255))
+    availability_date: Mapped[date | None] = mapped_column(Date)
+
     educations: Mapped[list["Education"]] = relationship(back_populates="profile", cascade="all, delete-orphan")
     experiences: Mapped[list["Experience"]] = relationship(back_populates="profile", cascade="all, delete-orphan")
     projects: Mapped[list["Project"]] = relationship(back_populates="profile", cascade="all, delete-orphan")

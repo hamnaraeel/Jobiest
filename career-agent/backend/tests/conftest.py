@@ -126,3 +126,44 @@ def make_analyzed_job(db_session):
         return job
 
     return _make
+
+
+@pytest.fixture
+def make_approved_cv(db_session):
+    """Factory fixture: creates an approved CVVersion row directly
+    (bypassing the full generation pipeline) for a given job/profile --
+    Step 4's cover letter generation requires one to exist."""
+
+    def _make(job_id: int, profile_id: int, version_number: int = 1):
+        from app.models.cv_version import CVVersion
+        from app.models.enums import CVStatus
+
+        cv = CVVersion(
+            job_id=job_id, profile_id=profile_id,
+            version_name=f"Test CV - V{version_number}", version_number=version_number,
+            template_name="ats/ml_engineer", status=CVStatus.APPROVED,
+        )
+        db_session.add(cv)
+        db_session.commit()
+        db_session.refresh(cv)
+        return cv
+
+    return _make
+
+
+@pytest.fixture
+def fake_ollama_client():
+    """Factory fixture: builds a fake OllamaClient-like object whose
+    chat_structured() returns each given output in sequence -- mirrors the
+    fake OpenAI client pattern used in Steps 2-3's tests, adapted to
+    OllamaClient's simpler direct-return interface (no
+    .choices[0].message.parsed unwrapping needed)."""
+
+    from unittest.mock import MagicMock
+
+    def _make(*outputs):
+        client = MagicMock()
+        client.chat_structured.side_effect = list(outputs)
+        return client
+
+    return _make

@@ -14,9 +14,13 @@ An AI-powered job application agent, built step by step.
   job-tailored CV where every bullet traces back to a real, verified
   profile row, validated deterministically before it's ever rendered to
   LaTeX and compiled to PDF. See [`docs/cv-generation.md`](docs/cv-generation.md).
+- **Step 4 — Cover Letters & Application Answers**: generate a tailored
+  cover letter and answer common (or your own) application questions,
+  running entirely on a local [Ollama](https://ollama.com) model -- no
+  paid API. See [`docs/cover-letters-and-applications.md`](docs/cover-letters-and-applications.md).
 
-None of these steps include cover-letter generation, browser automation,
-application submission, or autonomous agents — those come later.
+None of these steps include browser automation, application submission,
+or autonomous agents — those come later.
 
 ## 1. Installation
 
@@ -46,6 +50,16 @@ row -- it just returns a clear PDF-compilation error inside `warnings`
 instead of a `pdf_path`, rather than failing the whole request. Use
 `POST /jobs/{id}/cv/preview` (which never attempts PDF compilation) to
 review generated content without needing `pdflatex` at all.
+
+Step 4 (cover letters, application answers) additionally needs
+[Ollama](https://ollama.com) with a model pulled locally -- no OpenAI key,
+no paid API of any kind:
+
+```bash
+brew install ollama
+brew services start ollama          # or: ollama serve
+ollama pull llama3.1                # or any model you prefer
+```
 
 ## 2. PostgreSQL setup
 
@@ -82,18 +96,28 @@ OPENAI_MODEL=gpt-4o-mini
 CV_MAX_PAGES=1
 CV_STORAGE_DIR=../data/cvs
 PDFLATEX_PATH=pdflatex
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.1
+COVER_LETTER_MIN_WORDS=250
+COVER_LETTER_MAX_WORDS=400
+APPLICATION_MATERIALS_DIR=../data/application_materials
 ```
 
-`OPENAI_API_KEY` powers job analysis, CV planning/content generation, and
-the optional match-explanation call. Everything else -- profile
-management, job ingestion/cleaning/storage, deduplication, the dashboard,
-and the deterministic match/CV-validation logic itself -- works with no
-key set. Calling an AI-dependent endpoint without a key returns a clear
-`503` explaining what's missing, never a crash or a silent fallback
-pretending to be real analysis. `CV_MAX_PAGES` is read by the CV
-generation service as the target page budget; `CV_STORAGE_DIR` is where
-`.tex`/`.pdf` files land (see `data/cvs/`); `PDFLATEX_PATH` lets you point
-at a non-standard `pdflatex` binary if it's not on `PATH`.
+`OPENAI_API_KEY` powers job analysis and CV planning/content generation
+(Steps 2-3 only). `OLLAMA_MODEL` powers cover letters and application
+answers (Step 4) -- entirely separate from OpenAI, no paid API, no key.
+Everything else -- profile management, job ingestion/cleaning/storage,
+deduplication, the dashboard, and every deterministic validation/matching
+step -- works with neither configured. Calling an AI-dependent endpoint
+without its provider configured returns a clear `503` explaining what's
+missing, never a crash or a silent fallback pretending to be real output.
+`CV_MAX_PAGES` is the CV generator's target page budget; `CV_STORAGE_DIR`/
+`APPLICATION_MATERIALS_DIR` are where generated `.tex`/`.pdf` files land
+(see `data/cvs/README.md`, `data/application_materials/README.md`);
+`PDFLATEX_PATH` lets you point at a non-standard `pdflatex` binary if it's
+not on `PATH`; `COVER_LETTER_MIN_WORDS`/`MAX_WORDS` set the target length
+range (`length: "short"|"medium"|"long"` in the generate request nudges
+within/around that range).
 
 ## 4. Database migration
 
@@ -334,6 +358,85 @@ Full Step 3 endpoint list: `POST /jobs/{id}/cv/generate`,
 `GET /cvs/{id}/download`, `GET /cvs/{id}/comparison`,
 `PATCH /cvs/{id}/status`, `DELETE /cvs/{id}`.
 
+## 7d. Step 4: cover letters & application answers (local Ollama)
+
+A cover letter needs an **approved** CV first:
+
+```bash
+curl -X PATCH http://localhost:8000/cvs/1/status -H "Content-Type: application/json" -d '{"status": "approved"}'
+curl -X POST http://localhost:8000/jobs/1/cover-letter/generate | python3 -m json.tool
+```
+
+Optional style/length/focus/instructions (validated -- invalid values are
+rejected, and instructions can never override truthfulness: "add AWS" is
+rejected outright if AWS isn't verified):
+
+```bash
+curl -X POST http://localhost:8000/jobs/1/cover-letter/generate \
+  -H "Content-Type: application/json" \
+  -d '{"style": "concise", "length": "short", "focus": ["computer vision"], "instructions": "Emphasize my research experience."}'
+```
+
+Download as text (default) or PDF (compiled lazily on first request):
+
+```bash
+curl http://localhost:8000/cover-letters/1/download -o letter.txt
+curl "http://localhost:8000/cover-letters/1/download?format=pdf" -o letter.pdf
+```
+
+Approve, regenerate a new version, or see version history:
+
+```bash
+curl -X PATCH http://localhost:8000/cover-letters/1/status -H "Content-Type: application/json" -d '{"status": "approved"}'
+curl -X POST http://localhost:8000/cover-letters/1/regenerate -H "Content-Type: application/json" -d '{"length": "long"}'
+curl http://localhost:8000/cover-letters/1/versions
+```
+
+Application questions -- create, then generate an answer (character/word
+limits are enforced in Python, with automatic LLM-assisted shortening if
+the first draft is too long):
+
+```bash
+curl -X POST http://localhost:8000/jobs/1/application-questions \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Describe your experience with PyTorch.", "character_limit": 500}'
+
+curl -X POST http://localhost:8000/jobs/1/application-questions/1/answer | python3 -m json.tool
+```
+
+Salary/authorization/relocation/availability questions never guess --
+they return `manual_input_required` until you explicitly set the
+corresponding profile field:
+
+```bash
+curl -X POST http://localhost:8000/jobs/1/application-questions \
+  -H "Content-Type: application/json" -d '{"question": "What is your salary expectation?"}'
+curl -X POST http://localhost:8000/jobs/1/application-questions/2/answer
+# {"status": "manual_input_required", "question_type": "salary", "reason": "No salary expectation is configured on the career profile."}
+
+curl -X PUT http://localhost:8000/profile -H "Content-Type: application/json" -d '{"salary_expectation": "$120,000 - $140,000 USD"}'
+# now the same question can generate a real answer
+```
+
+The full picture for a job -- job, match, CV, cover letter, every
+question's answer, and whether it's all actually approved:
+
+```bash
+curl http://localhost:8000/jobs/1/application-materials | python3 -m json.tool
+```
+
+Full Step 4 endpoint list: `POST /jobs/{id}/cover-letter/generate`,
+`GET /cover-letters/{id}`, `GET /cover-letters/{id}/versions`,
+`GET /cover-letters/{id}/download`, `POST /cover-letters/{id}/regenerate`,
+`PATCH /cover-letters/{id}/status`, `POST/GET /jobs/{id}/application-questions`,
+`POST /jobs/{id}/application-questions/{id}/answer`,
+`GET /application-answers/{id}`, `PATCH /application-answers/{id}/status`,
+`GET /jobs/{id}/application-materials`.
+
+See `docs/examples/cover_letter_example.txt` and
+`docs/examples/application_answers_example.json` for real generated
+output.
+
 ## 8. Testing
 
 Tests run against a real PostgreSQL database (with pgvector) — point
@@ -345,14 +448,16 @@ export DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/caree
 pytest -v
 ```
 
-No `OPENAI_API_KEY` is needed to run the suite -- every test that would
-otherwise call OpenAI mocks the client (`pytest-mock`'s `mocker` fixture,
-or a hand-built fake client for the CV generation tests) and every test
-that would otherwise hit a real URL mocks `requests.get`. Tests never
+No `OPENAI_API_KEY` and no running Ollama instance are needed to run the
+suite -- every test that would otherwise call OpenAI or Ollama mocks the
+client (`pytest-mock`'s `mocker` fixture, or a hand-built fake client --
+see the `fake_ollama_client` fixture in `tests/conftest.py`) and every
+test that would otherwise hit a real URL mocks `requests.get`. Tests never
 depend on real network or API calls. PDF-compilation tests are skipped
 automatically (`pytest.mark.skipif`) when `pdflatex` isn't on `PATH` --
-everything else in the CV pipeline (planning, content generation,
-validation, LaTeX rendering/escaping) is still fully tested either way.
+everything else in the CV/cover-letter pipelines (planning, content
+generation, validation, LaTeX rendering/escaping) is still fully tested
+either way.
 
 ## Project structure
 
@@ -361,8 +466,8 @@ career-agent/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py               FastAPI app, router registration, logging config
-│   │   ├── config.py              Settings (incl. CV_MAX_PAGES, CV_STORAGE_DIR, PDFLATEX_PATH)
-│   │   ├── api/                   One router per resource (incl. jobs.py, cvs.py)
+│   │   ├── config.py              Settings (incl. OLLAMA_BASE_URL, OLLAMA_MODEL, COVER_LETTER_*)
+│   │   ├── api/                   One router per resource (incl. jobs.py, cvs.py, applications.py)
 │   │   ├── models/                SQLAlchemy models + shared enums
 │   │   ├── schemas/                Pydantic Create/Update/Read schemas
 │   │   ├── services/
@@ -374,41 +479,50 @@ career-agent/
 │   │   │   ├── job_matching_service.py    Step 2: deterministic scoring engine
 │   │   │   ├── cv_customization_service.py Step 3: plan -> content -> assemble orchestration
 │   │   │   ├── cv_validation_service.py    Step 3: deterministic hallucination detection
-│   │   │   ├── cv_render_service.py        Step 3: LaTeX escaping/rendering + pdflatex
-│   │   │   └── cv_comparison_service.py    Step 3: change tracking + comparison
+│   │   │   ├── cv_render_service.py        Step 3+4: LaTeX escaping/rendering + pdflatex (shared)
+│   │   │   ├── cv_comparison_service.py    Step 3: change tracking + comparison
+│   │   │   ├── cover_letter_service.py     Step 4: evidence selection -> Ollama -> validate -> store
+│   │   │   ├── application_answer_service.py Step 4: question classification, answers, length limits
+│   │   │   ├── answer_validation_service.py  Step 4: deterministic claim validation (shared)
+│   │   │   └── application_material_service.py Step 4: read-only materials package assembly
 │   │   ├── ai/
-│   │   │   ├── client.py          OpenAI client + config-error handling
+│   │   │   ├── client.py          OpenAI client (Steps 2-3) + Ollama client (Step 4), side by side
 │   │   │   ├── prompts.py         Step 2 prompts (JOB_ANALYSIS_PROMPT_V1, ...)
-│   │   │   ├── structured_outputs.py  Step 2 LLM output schemas
+│   │   │   ├── structured_outputs.py  Step 2 + Step 4 LLM output schemas
 │   │   │   ├── cv_prompts.py       Step 3 prompts (CV_PLAN_PROMPT_V1, ...)
-│   │   │   └── cv_structured_outputs.py  Step 3 LLM output schemas
+│   │   │   ├── cv_structured_outputs.py  Step 3 LLM output schemas
+│   │   │   ├── cover_letter_prompts.py   Step 4 prompts (COVER_LETTER_PROMPT_V1)
+│   │   │   └── application_prompts.py    Step 4 prompts (answer generation + shortening)
 │   │   ├── scripts/
 │   │   │   └── analyze_job.py     Manual end-to-end demo script (Step 2)
 │   │   └── db/                    Engine/session, declarative Base
-│   ├── alembic/                   Migrations (Step 1, then Step 2, then Step 3 schema)
+│   ├── alembic/                   Migrations (Steps 1-4, applied in order)
 │   ├── tests/                     pytest suite
 │   ├── requirements.txt
 │   └── .env.example
 ├── cv_templates/
-│   ├── ats/ml_engineer.tex        Default ATS-friendly LaTeX template
+│   ├── ats/ml_engineer.tex        Default ATS-friendly CV LaTeX template
+│   ├── cover_letter/standard.tex  Default cover letter LaTeX template
 │   └── README.md                  How the template placeholder system works
 ├── data/
 │   ├── career_profile.json        Placeholder seed data
 │   ├── test_job_description.txt   Sample job posting for the demo script
-│   ├── cvs/                       Generated .tex/.pdf output (job_{id}/cv_v{n}.*)
+│   ├── cvs/                       Generated CV .tex/.pdf output (job_{id}/cv_v{n}.*)
+│   ├── application_materials/     Generated cover letter .tex/.pdf output
 │   └── README.md                  How to fill in career_profile.json
 ├── docs/
 │   ├── career-profile-schema.md   Step 1: full schema + verification rules
 │   ├── job-matching-schema.md     Step 2: dedup, scoring, match statuses
 │   ├── cv-generation.md           Step 3: pipeline, validation, versioning, approval
-│   └── examples/                  Real generated cv_example.json / cv_example.tex
+│   ├── cover-letters-and-applications.md  Step 4: Ollama pipeline, validation, never-guess fields
+│   └── examples/                  Real generated example output for Steps 3-4
 └── README.md
 ```
 
 ## What's next (not built yet)
 
-Cover letter generation, company-specific motivation/application-answer
-generation, browser automation for application submission, and
-application/outcome tracking. `CVVersion` (id, status, PDF path, JSON
-content, match scores, job id) is the exact handoff surface a future step
-would consume -- nothing about it needs to change shape to support that.
+Browser automation for application submission and application/outcome
+tracking. `GET /jobs/{id}/application-materials` (job, match, CV, cover
+letter, every answer, and a computed `ready_for_application` flag) is the
+exact handoff surface a future step would consume -- nothing about it
+needs to change shape to support that.

@@ -1,0 +1,56 @@
+[
+  {
+    "question": "Why are you interested in this role?",
+    "question_type": "motivation",
+    "character_limit": 500,
+    "answer": "This role's focus on computer vision closely matches my hands-on experience developing PyTorch-based segmentation models, including my work on the Hirschsprung Disease Segmentation project.",
+    "character_count": 189,
+    "status": "validated",
+    "evidence": [
+      {
+        "source_type": "experience",
+        "source_id": 1
+      },
+      {
+        "source_type": "project",
+        "source_id": 1
+      }
+    ]
+  },
+  {
+    "question": "Describe your experience with PyTorch.",
+    "question_type": "technical",
+    "character_limit": 500,
+    "answer": "I have used PyTorch professionally at Acme AI to develop deep learning models for medical image segmentation, and independently on the Hirschsprung Disease Segmentation project, where I applied PyTorch-based computer vision techniques and improved segmentation accuracy.",
+    "character_count": 270,
+    "status": "validated",
+    "evidence": [
+      {
+        "source_type": "experience",
+        "source_id": 1
+      },
+      {
+        "source_type": "project",
+        "source_id": 1
+      }
+    ]
+  },
+  {
+    "question": "What is your salary expectation?",
+    "question_type": "salary",
+    "character_limit": 300,
+    "answer": "My salary expectation is $120,000 - $140,000 USD.",
+    "character_count": 49,
+    "status": "validated",
+    "evidence": [
+      {
+        "source_type": "experience",
+        "source_id": 1
+      },
+      {
+        "source_type": "project",
+        "source_id": 1
+      }
+    ]
+  }
+]

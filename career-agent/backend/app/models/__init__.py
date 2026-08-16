@@ -18,3 +18,6 @@ from app.models.job_match import JobMatch  # noqa: F401
 from app.models.cv_version import CVVersion  # noqa: F401
 from app.models.cv_section import CVSection  # noqa: F401
 from app.models.cv_change import CVChange  # noqa: F401
+from app.models.cover_letter import CoverLetter  # noqa: F401
+from app.models.application_question import ApplicationQuestion  # noqa: F401
+from app.models.application_answer import ApplicationAnswer  # noqa: F401

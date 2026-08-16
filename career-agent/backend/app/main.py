@@ -15,6 +15,7 @@ logging.basicConfig(
 
 from app.api import (
     achievements,
+    applications,
     certifications,
     cvs,
     education,
@@ -31,12 +32,14 @@ app = FastAPI(
     title="Career Agent",
     description=(
         "Single source of truth for verified career facts, job ingestion/analysis/"
-        "matching, and truthful, source-traceable CV customization. Nothing here is "
+        "matching, truthful source-traceable CV customization, and locally-generated "
+        "(Ollama, no paid API) cover letters and application answers. Nothing here is "
         "ever invented: every fact carries a `verified` flag, every match status "
         "traces back to specific profile evidence or is honestly marked missing/"
-        "unknown, and every generated CV bullet traces back to a real profile row."
+        "unknown, and every generated claim traces back to a real profile row or is "
+        "rejected/flagged for manual input rather than guessed."
     ),
-    version="0.3.0",
+    version="0.4.0",
 )
 
 app.include_router(profile.router)
@@ -51,6 +54,9 @@ app.include_router(evidence.router)
 app.include_router(jobs.router)
 app.include_router(cvs.jobs_cv_router)
 app.include_router(cvs.cvs_router)
+app.include_router(applications.jobs_router)
+app.include_router(applications.cover_letters_router)
+app.include_router(applications.answers_router)
 
 
 @app.get("/health", tags=["health"])
