@@ -188,3 +188,80 @@ class ApplicationQuestionType(str, enum.Enum):
     AUTHORIZATION = "authorization"
     GENERAL = "general"
     UNKNOWN = "unknown"
+
+
+# --- Step 5: browser-based application assistant ---
+
+
+class ApplicationStatus(str, enum.Enum):
+    NOT_STARTED = "not_started"
+    PREPARING = "preparing"
+    BROWSER_OPEN = "browser_open"
+    FILLING = "filling"
+    NEEDS_USER_INPUT = "needs_user_input"
+    READY_FOR_REVIEW = "ready_for_review"
+    APPROVED_FOR_SUBMISSION = "approved_for_submission"
+    SUBMITTING = "submitting"
+    SUBMITTED = "submitted"
+    FAILED = "failed"
+    ABANDONED = "abandoned"
+    BLOCKED = "blocked"
+
+
+class ApplicationEventType(str, enum.Enum):
+    APPLICATION_CREATED = "application_created"
+    BROWSER_OPENED = "browser_opened"
+    PAGE_LOADED = "page_loaded"
+    FIELD_DETECTED = "field_detected"
+    FIELD_FILLED = "field_filled"
+    FILE_UPLOADED = "file_uploaded"
+    QUESTION_DETECTED = "question_detected"
+    USER_INPUT_REQUIRED = "user_input_required"
+    REVIEW_READY = "review_ready"
+    SUBMISSION_APPROVED = "submission_approved"
+    SUBMISSION_STARTED = "submission_started"
+    SUBMISSION_COMPLETED = "submission_completed"
+    SUBMISSION_FAILED = "submission_failed"
+    BLOCKED = "blocked"
+
+
+class ApplicationFieldType(str, enum.Enum):
+    TEXT = "text"
+    TEXTAREA = "textarea"
+    EMAIL = "email"
+    PHONE = "phone"
+    NUMBER = "number"
+    DATE = "date"
+    SELECT = "select"
+    CHECKBOX = "checkbox"
+    RADIO = "radio"
+    FILE = "file"
+    ADDRESS = "address"
+    URL = "url"
+    UNKNOWN = "unknown"
+
+
+class ApplicationFieldStatus(str, enum.Enum):
+    DETECTED = "detected"
+    MAPPED = "mapped"
+    FILLED = "filled"
+    NEEDS_REVIEW = "needs_review"
+    SKIPPED = "skipped"
+    REJECTED = "rejected"
+
+
+class ApplicationPlatform(str, enum.Enum):
+    GENERIC = "generic"
+    GREENHOUSE = "greenhouse"
+    LEVER = "lever"
+    WORKDAY = "workday"
+    LINKEDIN = "linkedin"
+    INDEED = "indeed"
+    COMPANY_SITE = "company_site"
+    UNKNOWN = "unknown"
+
+
+class ApplicationSessionStatus(str, enum.Enum):
+    ACTIVE = "active"
+    ENDED = "ended"
+    ERROR = "error"

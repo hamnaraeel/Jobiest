@@ -22,6 +22,20 @@ class Settings(BaseSettings):
     cover_letter_max_words: int = 400
     application_materials_dir: str = "../data/application_materials"
 
+    # Step 5: browser-based application assistant. DRY_RUN defaults True
+    # on purpose -- the agent never clicks a real submit button unless
+    # this is explicitly set to false AND the user has separately called
+    # POST /applications/{id}/approve-submission. Headless defaults False
+    # so you can watch the browser during development.
+    dry_run: bool = True
+    browser_headless: bool = False
+    browser_type: str = "chromium"
+    browser_profile_dir: str = "../data/browser_profile"
+    browser_screenshots: bool = False
+    application_sessions_dir: str = "../data/application_sessions"
+    field_confidence_high: float = 0.90
+    field_confidence_medium: float = 0.70
+
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", case_sensitive=False)
 
 

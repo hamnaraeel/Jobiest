@@ -3,11 +3,18 @@ from datetime import date
 
 import pytest
 
+from app.config import get_settings
 from app.models.enums import CVSectionType, EntityType
 from app.schemas.cv import CVBullet, CVContent, CVExperienceEntry, CVHeader, CVSkillCategory
 from app.services import cv_render_service
 
-PDFLATEX_AVAILABLE = shutil.which("pdflatex") is not None
+# Checks settings.pdflatex_path (what compile_pdf() actually invokes), not
+# just a bare "pdflatex" on PATH -- PDFLATEX_PATH is commonly set to an
+# absolute path (e.g. /Library/TeX/texbin/pdflatex on macOS with BasicTeX)
+# precisely because it *isn't* on PATH, so checking PATH alone gives a
+# false negative here even though compile_pdf() would succeed.
+_pdflatex_path = get_settings().pdflatex_path
+PDFLATEX_AVAILABLE = shutil.which(_pdflatex_path) is not None
 
 
 # --- 14: LaTeX escaping -----------------------------------------------------

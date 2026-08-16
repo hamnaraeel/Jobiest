@@ -18,9 +18,17 @@ An AI-powered job application agent, built step by step.
   cover letter and answer common (or your own) application questions,
   running entirely on a local [Ollama](https://ollama.com) model -- no
   paid API. See [`docs/cover-letters-and-applications.md`](docs/cover-letters-and-applications.md).
+- **Step 5 — Browser-Based Application Assistant**: a real Playwright
+  browser detects form fields, auto-fills only high-confidence matches to
+  your verified profile/approved Step 4 answers, uploads only *approved*
+  CV/cover-letter PDFs, and stops for you at logins/CAPTCHAs and before
+  any real submit click -- `DRY_RUN=true` by default, and a real click
+  additionally requires your explicit `POST
+  /applications/{id}/approve-submission`. See
+  [`docs/browser-application-assistant.md`](docs/browser-application-assistant.md).
 
-None of these steps include browser automation, application submission,
-or autonomous agents — those come later.
+This is an assisted workflow, not an autonomous agent -- nothing is ever
+submitted without a human reviewing it first.
 
 ## 1. Installation
 
@@ -60,6 +68,21 @@ brew install ollama
 brew services start ollama          # or: ollama serve
 ollama pull llama3.1                # or any model you prefer
 ```
+
+Step 5 (browser-based application assistant) additionally needs a
+Playwright browser binary:
+
+```bash
+python3 -m playwright install chromium
+```
+
+> **macOS 12 (Monterey) note:** recent Playwright releases have dropped
+> Chromium binary support for macOS 12. `requirements.txt` pins
+> `playwright==1.48.0`, the newest version confirmed to still ship a
+> mac12-compatible Chromium build (verified with a real
+> `sync_playwright` smoke test). If you're on macOS 13+ you can use a
+> newer Playwright version freely; on macOS 12, don't bump past 1.48.x
+> without re-verifying `playwright install chromium` still succeeds.
 
 ## 2. PostgreSQL setup
 
@@ -101,6 +124,14 @@ OLLAMA_MODEL=llama3.1
 COVER_LETTER_MIN_WORDS=250
 COVER_LETTER_MAX_WORDS=400
 APPLICATION_MATERIALS_DIR=../data/application_materials
+DRY_RUN=true
+BROWSER_HEADLESS=false
+BROWSER_TYPE=chromium
+BROWSER_PROFILE_DIR=../data/browser_profile
+BROWSER_SCREENSHOTS=false
+APPLICATION_SESSIONS_DIR=../data/application_sessions
+FIELD_CONFIDENCE_HIGH=0.90
+FIELD_CONFIDENCE_MEDIUM=0.70
 ```
 
 `OPENAI_API_KEY` powers job analysis and CV planning/content generation
@@ -111,6 +142,10 @@ deduplication, the dashboard, and every deterministic validation/matching
 step -- works with neither configured. Calling an AI-dependent endpoint
 without its provider configured returns a clear `503` explaining what's
 missing, never a crash or a silent fallback pretending to be real output.
+`DRY_RUN` (Step 5) gates whether the browser assistant is ever allowed to
+click a real submit button -- leave it `true` until you've reviewed the
+workflow yourself; `BROWSER_HEADLESS=false` shows the browser window so
+you can watch/log in/solve a CAPTCHA manually.
 `CV_MAX_PAGES` is the CV generator's target page budget; `CV_STORAGE_DIR`/
 `APPLICATION_MATERIALS_DIR` are where generated `.tex`/`.pdf` files land
 (see `data/cvs/README.md`, `data/application_materials/README.md`);
@@ -437,6 +472,79 @@ See `docs/examples/cover_letter_example.txt` and
 `docs/examples/application_answers_example.json` for real generated
 output.
 
+## 7e. Step 5: browser-based application assistant
+
+Create an application attempt for an already-analyzed job (defaults to
+the job's own URL and the latest approved CV/cover letter):
+
+```bash
+curl -X POST http://localhost:8000/jobs/1/apply | python3 -m json.tool
+```
+
+Open a real browser and start the workflow:
+
+```bash
+curl -X POST http://localhost:8000/applications/1/start-browser
+curl -X POST http://localhost:8000/applications/1/analyze-page | python3 -m json.tool
+```
+
+If `captcha_detected` or `login_required` comes back `true`, the
+application's status becomes `blocked`/`needs_user_input` and nothing
+further happens automatically -- complete that step by hand in the
+browser window, then call `analyze-page` again.
+
+Auto-fill the high-confidence fields and upload approved materials, then
+review what still needs you:
+
+```bash
+curl -X POST http://localhost:8000/applications/1/fill | python3 -m json.tool
+curl http://localhost:8000/applications/1/review | python3 -m json.tool
+```
+
+Provide a value for anything flagged `user_review_required` (salary,
+authorization, relocation, and similar sensitive questions are *never*
+auto-filled, by design):
+
+```bash
+curl -X POST http://localhost:8000/applications/1/fields/3/input \
+  -H "Content-Type: application/json" -d '{"value": "$120,000 - $140,000 USD"}'
+```
+
+Submitting is always simulated while `DRY_RUN=true` (the default), no
+matter what else is true:
+
+```bash
+curl -X POST http://localhost:8000/applications/1/approve-submission
+curl -X POST http://localhost:8000/applications/1/submit
+# {"submitted": false, "dry_run": true, "reason": "DRY_RUN is enabled -- submission is simulated, ..."}
+```
+
+To actually submit, set `DRY_RUN=false` in `.env`, restart the app, and
+call approve-submission again (it's per-application and isn't implied by
+anything else):
+
+```bash
+curl -X POST http://localhost:8000/applications/1/approve-submission
+curl -X POST http://localhost:8000/applications/1/submit | python3 -m json.tool
+# {"submitted": true, "confirmation_reference": "..."}
+```
+
+`GET /applications/1/events` returns the full append-only audit log of
+everything the agent did, in order.
+
+Full Step 5 endpoint list: `POST /jobs/{id}/apply`, `GET /applications`,
+`GET /applications/{id}`, `GET /applications/{id}/events`,
+`POST /applications/{id}/start-browser`,
+`POST /applications/{id}/analyze-page`, `POST /applications/{id}/fill`,
+`GET /applications/{id}/review`,
+`POST /applications/{id}/fields/{field_id}/input`,
+`POST /applications/{id}/approve-submission`,
+`POST /applications/{id}/submit`, `POST /applications/{id}/pause`,
+`POST /applications/{id}/resume`, `POST /applications/{id}/cancel`.
+
+See `docs/browser-application-assistant.md` for the full safety model and
+architecture.
+
 ## 8. Testing
 
 Tests run against a real PostgreSQL database (with pgvector) — point
@@ -458,6 +566,20 @@ automatically (`pytest.mark.skipif`) when `pdflatex` isn't on `PATH` --
 everything else in the CV/cover-letter pipelines (planning, content
 generation, validation, LaTeX rendering/escaping) is still fully tested
 either way.
+
+Step 5's tests use a **real** Playwright Chromium browser (this does need
+`python3 -m playwright install chromium` done first) against local HTML
+fixtures in `tests/fixtures/` loaded via `file://` URLs -- never a real
+job site. `tests/conftest.py` forces `BROWSER_HEADLESS=true` for the test
+session regardless of your `.env` (so it never pops a visible window
+during an automated run) and leaves `DRY_RUN=true` except in the one test
+that explicitly proves the explicit-approval submission path works
+(`allow_real_submit` fixture, restored afterward). See
+`tests/test_browser_application.py` (field mapping / submission gate /
+platform detection, no browser needed) and
+`tests/test_browser_application_e2e.py` (the full workflow, including
+CAPTCHA/login-required detection and both the dry-run-blocks and
+explicit-approval-enables submission proofs).
 
 ## Project structure
 
@@ -484,7 +606,20 @@ career-agent/
 │   │   │   ├── cover_letter_service.py     Step 4: evidence selection -> Ollama -> validate -> store
 │   │   │   ├── application_answer_service.py Step 4: question classification, answers, length limits
 │   │   │   ├── answer_validation_service.py  Step 4: deterministic claim validation (shared)
-│   │   │   └── application_material_service.py Step 4: read-only materials package assembly
+│   │   │   ├── application_material_service.py Step 4: read-only materials package assembly
+│   │   │   └── application_service.py     Step 5: DB orchestration for the browser workflow
+│   │   ├── browser/                       Step 5: Playwright mechanics
+│   │   │   ├── browser_manager.py         Session lifecycle (persistent Chromium context)
+│   │   │   ├── page_analyzer.py           CAPTCHA / login-required detection
+│   │   │   ├── form_detector.py           Field detection (label/name/id, no fragile selectors)
+│   │   │   ├── field_mapper.py            Field -> profile/answer mapping + confidence scoring
+│   │   │   ├── form_filler.py             Fills only fields already decided safe to fill
+│   │   │   ├── file_uploader.py           Uploads only status=approved CV/cover-letter PDFs
+│   │   │   ├── submission_guard.py        The non-negotiable DRY_RUN + approval gate
+│   │   │   ├── platform_detector.py       Hostname -> ATS platform -> adapter
+│   │   │   └── adapters/
+│   │   │       ├── base.py                BaseApplicationAdapter interface
+│   │   │       └── generic.py             GenericApplicationAdapter (the only one implemented)
 │   │   ├── ai/
 │   │   │   ├── client.py          OpenAI client (Steps 2-3) + Ollama client (Step 4), side by side
 │   │   │   ├── prompts.py         Step 2 prompts (JOB_ANALYSIS_PROMPT_V1, ...)
@@ -496,9 +631,10 @@ career-agent/
 │   │   ├── scripts/
 │   │   │   └── analyze_job.py     Manual end-to-end demo script (Step 2)
 │   │   └── db/                    Engine/session, declarative Base
-│   ├── alembic/                   Migrations (Steps 1-4, applied in order)
-│   ├── tests/                     pytest suite
+│   ├── alembic/                   Migrations (Steps 1-5, applied in order)
+│   ├── tests/                     pytest suite + tests/fixtures/ (local HTML, Step 5 only)
 │   ├── requirements.txt
+│   ├── pytest.ini
 │   └── .env.example
 ├── cv_templates/
 │   ├── ats/ml_engineer.tex        Default ATS-friendly CV LaTeX template
@@ -509,20 +645,24 @@ career-agent/
 │   ├── test_job_description.txt   Sample job posting for the demo script
 │   ├── cvs/                       Generated CV .tex/.pdf output (job_{id}/cv_v{n}.*)
 │   ├── application_materials/     Generated cover letter .tex/.pdf output
+│   ├── browser_profile/           Persistent Chromium user-data dir (Step 5, gitignored)
+│   ├── application_sessions/      Per-application screenshots if enabled (Step 5, gitignored)
 │   └── README.md                  How to fill in career_profile.json
 ├── docs/
 │   ├── career-profile-schema.md   Step 1: full schema + verification rules
 │   ├── job-matching-schema.md     Step 2: dedup, scoring, match statuses
 │   ├── cv-generation.md           Step 3: pipeline, validation, versioning, approval
 │   ├── cover-letters-and-applications.md  Step 4: Ollama pipeline, validation, never-guess fields
+│   ├── browser-application-assistant.md   Step 5: safety model, field mapping, architecture
 │   └── examples/                  Real generated example output for Steps 3-4
 └── README.md
 ```
 
 ## What's next (not built yet)
 
-Browser automation for application submission and application/outcome
-tracking. `GET /jobs/{id}/application-materials` (job, match, CV, cover
-letter, every answer, and a computed `ready_for_application` flag) is the
-exact handoff surface a future step would consume -- nothing about it
-needs to change shape to support that.
+Platform-specific adapters (Greenhouse/Lever/Workday/...) beyond the
+generic HTML-form adapter, and outcome tracking after submission
+(interview/rejection/offer status). `platform_detector.register_adapter()`
+already exists for the former without needing to touch anything else;
+`Application.status` and its event log are the exact foundation the
+latter would build on.

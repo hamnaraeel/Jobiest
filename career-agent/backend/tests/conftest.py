@@ -1,3 +1,15 @@
+import os
+
+# Must be set before any `from app.config import get_settings` call anywhere
+# in the test session, since Settings is process-wide lru_cache'd: the real
+# app defaults BROWSER_HEADLESS=false (so a human user can watch/intervene),
+# but the test suite launches many real Playwright browser sessions and
+# must never pop visible windows during an automated run. DRY_RUN is
+# already true by default -- set explicitly here so tests never depend on
+# whatever a developer's local .env happens to contain.
+os.environ.setdefault("BROWSER_HEADLESS", "true")
+os.environ.setdefault("DRY_RUN", "true")
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -149,6 +161,101 @@ def make_approved_cv(db_session):
         return cv
 
     return _make
+
+
+@pytest.fixture
+def make_approved_cover_letter(db_session):
+    """Factory fixture: creates an approved CoverLetter row directly
+    (bypassing the Ollama generation pipeline), mirroring make_approved_cv
+    -- Step 5's file_uploader/submission_guard tests need one to exist."""
+
+    def _make(job_id: int, cv_version_id: int, profile_id: int, version_number: int = 1):
+        from app.models.cover_letter import CoverLetter
+        from app.models.enums import ApplicationMaterialStatus
+
+        cl = CoverLetter(
+            job_id=job_id, cv_version_id=cv_version_id, profile_id=profile_id,
+            version_name=f"Test Cover Letter - V{version_number}", version_number=version_number,
+            title="Test Cover Letter", content="Dear Hiring Manager, I am excited to apply.", word_count=8,
+            status=ApplicationMaterialStatus.APPROVED,
+        )
+        db_session.add(cl)
+        db_session.commit()
+        db_session.refresh(cl)
+        return cl
+
+    return _make
+
+
+@pytest.fixture
+def dummy_pdf(tmp_path):
+    """Writes a real (fake-content) PDF file to disk and returns its path
+    -- lets tests set CVVersion.pdf_path/CoverLetter.pdf_path directly so
+    file_uploader's lazy-compile path is skipped entirely (it only
+    compiles when no PDF already exists on disk), keeping Step 5 tests
+    independent of pdflatex."""
+
+    def _make(name: str = "dummy.pdf") -> str:
+        path = tmp_path / name
+        path.write_bytes(b"%PDF-1.4 fake test pdf content")
+        return str(path)
+
+    return _make
+
+
+@pytest.fixture
+def fixture_url():
+    """Returns a file:// URL for a file in tests/fixtures/ -- Step 5's
+    browser tests must never touch real job sites, only these local
+    fixtures (see tests/fixtures/test_application*.html)."""
+
+    from pathlib import Path
+
+    def _url(name: str) -> str:
+        path = (Path(__file__).parent / "fixtures" / name).resolve()
+        return f"file://{path}"
+
+    return _url
+
+
+@pytest.fixture
+def allow_real_submit():
+    """Flips settings.dry_run to False for the duration of one test, then
+    restores it -- Settings is a process-wide lru_cache'd singleton, so
+    mutating the cached instance's attribute (rather than re-instantiating
+    it) is what actually reaches every module that already called
+    get_settings(). Used only by the explicit-approval submission test;
+    every other test relies on the safe DRY_RUN=true default."""
+
+    from app.config import get_settings
+
+    settings = get_settings()
+    original = settings.dry_run
+    settings.dry_run = False
+    yield settings
+    settings.dry_run = original
+
+
+@pytest.fixture(autouse=True)
+def _close_leftover_browser_sessions(client):
+    """Safety net: browser_manager launches every session against the SAME
+    persistent profile directory, so a session left open by one test would
+    make the next test's start_session() fail to acquire the profile lock.
+
+    Closes any leftover session through the `client` fixture's own
+    /cancel endpoint call rather than awaiting browser_manager.close_session()
+    directly: Starlette's TestClient runs async route handlers on its own
+    dedicated event-loop thread (a "portal") that a session's Playwright
+    objects are bound to, and awaiting them from a *different* event loop
+    (e.g. one pytest-asyncio would manage separately for an async fixture)
+    hangs forever instead of raising. Routing through `client` guarantees
+    the close happens on the same loop that opened the session."""
+
+    yield
+    from app.browser import browser_manager
+
+    for application_id in list(browser_manager._active_sessions.keys()):
+        client.post(f"/applications/{application_id}/cancel")
 
 
 @pytest.fixture

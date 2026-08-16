@@ -15,3 +15,10 @@ requests>=2.31,<3.0
 beautifulsoup4>=4.12,<5.0
 pytest-mock>=3.14,<4.0
 pypdf>=4.3,<5.0
+# Pinned (not a floor like the deps above): newer Playwright releases drop
+# browser-binary downloads for older macOS versions. 1.48.0 is the newest
+# release confirmed to still ship a macOS 12-compatible Chromium build.
+# Bump deliberately, not automatically, and re-verify `playwright install
+# chromium` succeeds on your OS before raising this.
+playwright==1.48.0
+pytest-asyncio>=0.24,<1.0

@@ -41,6 +41,17 @@ career-agent/data/application_materials/*
 !career-agent/data/application_materials/.gitkeep
 !career-agent/data/application_materials/README.md
 
+# Step 5: real browser profile (cookies/local storage/cache -- never
+# credentials, since the agent never automates login) and per-application
+# session artifacts (screenshots, if BROWSER_SCREENSHOTS=true). Neither
+# belongs in source control.
+career-agent/data/browser_profile/*
+!career-agent/data/browser_profile/.gitkeep
+!career-agent/data/browser_profile/README.md
+career-agent/data/application_sessions/*
+!career-agent/data/application_sessions/.gitkeep
+!career-agent/data/application_sessions/README.md
+
 # LaTeX build byproducts (should never survive compile_pdf() anyway, but
 # just in case pdflatex is interrupted mid-run)
 *.aux

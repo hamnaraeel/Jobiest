@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Test Application Form</title>
+</head>
+<body>
+<h1>Apply for Software Engineer</h1>
+
+<form id="application-form">
+  <label for="full-name">Full Name</label>
+  <input type="text" id="full-name" name="full_name" required>
+
+  <label for="email">Email Address</label>
+  <input type="email" id="email" name="email" required>
+
+  <label for="phone">Phone Number</label>
+  <input type="tel" id="phone" name="phone">
+
+  <label for="linkedin">LinkedIn Profile</label>
+  <input type="url" id="linkedin" name="linkedin_url">
+
+  <label for="portfolio">Portfolio Website</label>
+  <input type="url" id="portfolio" name="portfolio_url">
+
+  <label for="resume">Resume/CV</label>
+  <input type="file" id="resume" name="resume" required>
+
+  <label for="cover-letter">Cover Letter</label>
+  <input type="file" id="cover-letter" name="cover_letter">
+
+  <label for="source">How did you hear about us?</label>
+  <select id="source" name="source">
+    <option value="">Select one</option>
+    <option value="job_board">Job Board</option>
+    <option value="referral">Referral</option>
+    <option value="company_site">Company Website</option>
+    <option value="other">Other</option>
+  </select>
+
+  <fieldset>
+    <legend>Are you willing to relocate?</legend>
+    <label><input type="radio" name="relocate" value="yes"> Yes</label>
+    <label><input type="radio" name="relocate" value="no"> No</label>
+  </fieldset>
+
+  <label for="salary">Expected Salary</label>
+  <input type="text" id="salary" name="expected_salary">
+
+  <label for="why-us">Why do you want to work here?</label>
+  <textarea id="why-us" name="why_us" required></textarea>
+
+  <label><input type="checkbox" id="newsletter" name="newsletter"> Subscribe to our newsletter</label>
+
+  <button type="submit" id="submit-btn">Submit Application</button>
+</form>
+
+<div id="confirmation" style="display:none">
+  <h2>Thank you for your application!</h2>
+  <p>Your application has been successfully submitted. Application received.</p>
+  <p>Confirmation reference: TEST-REF-12345</p>
+</div>
+
+<script>
+  document.getElementById("application-form").addEventListener("submit", function (event) {
+    event.preventDefault();
+    document.getElementById("application-form").style.display = "none";
+    document.getElementById("confirmation").style.display = "block";
+  });
+</script>
+</body>
+</html>

@@ -21,3 +21,7 @@ from app.models.cv_change import CVChange  # noqa: F401
 from app.models.cover_letter import CoverLetter  # noqa: F401
 from app.models.application_question import ApplicationQuestion  # noqa: F401
 from app.models.application_answer import ApplicationAnswer  # noqa: F401
+from app.models.application import Application  # noqa: F401
+from app.models.application_event import ApplicationEvent  # noqa: F401
+from app.models.application_field import ApplicationField  # noqa: F401
+from app.models.application_session import ApplicationSession  # noqa: F401

@@ -16,6 +16,7 @@ logging.basicConfig(
 from app.api import (
     achievements,
     applications,
+    browser_applications,
     certifications,
     cvs,
     education,
@@ -57,6 +58,8 @@ app.include_router(cvs.cvs_router)
 app.include_router(applications.jobs_router)
 app.include_router(applications.cover_letters_router)
 app.include_router(applications.answers_router)
+app.include_router(browser_applications.apply_router)
+app.include_router(browser_applications.applications_router)
 
 
 @app.get("/health", tags=["health"])
