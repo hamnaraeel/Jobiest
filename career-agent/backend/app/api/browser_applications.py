@@ -61,6 +61,7 @@ def create_application(job_id: int, payload: ApplicationCreateRequest = Applicat
         return application_service.create_application(
             db, job, application_url=payload.application_url,
             cv_version_id=payload.cv_version_id, cover_letter_id=payload.cover_letter_id, force=payload.force,
+            source=payload.source,
         )
     except DuplicateApplicationError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc))

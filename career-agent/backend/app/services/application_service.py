@@ -57,6 +57,7 @@ def _latest_approved_cover_letter(db: Session, job_id: int) -> CoverLetter | Non
 def create_application(
     db: Session, job: Job, application_url: str | None = None,
     cv_version_id: int | None = None, cover_letter_id: int | None = None, force: bool = False,
+    source: str | None = None,
 ) -> Application:
     if not force:
         existing_submitted = db.execute(
@@ -77,6 +78,7 @@ def create_application(
         cover_letter_id=cover_letter.id if cover_letter else None,
         original_job_url=job.url, application_url=url,
         platform=detect_platform(url), status=ApplicationStatus.NOT_STARTED,
+        source=source,
     )
     db.add(application)
     db.commit()

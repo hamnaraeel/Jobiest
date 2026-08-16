@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models.enums import JobEmploymentType, JobStatus, WorkplaceType
+from app.models.enums import JobEmploymentType, JobStatus, PriorityLevel, WorkplaceType
 
 
 class JobCreateRequest(BaseModel):
@@ -35,9 +35,13 @@ class JobRead(BaseModel):
     salary_currency: str | None
     posted_date: date | None
     application_deadline: date | None
+    deadline_source: str | None
     extracted_at: datetime | None
     status: JobStatus
     duplicate_of_job_id: int | None
+    external_job_id: str | None
+    priority: PriorityLevel
+    tags: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

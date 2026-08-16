@@ -52,6 +52,12 @@ career-agent/data/application_sessions/*
 !career-agent/data/application_sessions/.gitkeep
 !career-agent/data/application_sessions/README.md
 
+# Step 6: local database backups (python -m app.cli backup) -- contain a
+# full dump of your career/application data, never checked in.
+career-agent/data/backups/*
+!career-agent/data/backups/.gitkeep
+!career-agent/data/backups/README.md
+
 # LaTeX build byproducts (should never survive compile_pdf() anyway, but
 # just in case pdflatex is interrupted mid-run)
 *.aux

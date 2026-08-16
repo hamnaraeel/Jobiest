@@ -36,6 +36,13 @@ class Settings(BaseSettings):
     field_confidence_high: float = 0.90
     field_confidence_medium: float = 0.70
 
+    # Step 6: job-search tracking, analytics, and follow-up management.
+    # A suggested follow-up date is only ever a suggestion -- the user
+    # must explicitly create it (spec section 12); nothing is scheduled
+    # automatically.
+    default_followup_days: int = 7
+    timezone: str = "UTC"
+
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", case_sensitive=False)
 
 

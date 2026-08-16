@@ -50,6 +50,22 @@ DEFAULT_WEIGHTS = {
 # Configurable: score >= apply -> "apply", score >= maybe -> "maybe", else "skip".
 DEFAULT_RECOMMENDATION_THRESHOLDS = {"apply": 75, "maybe": 60}
 
+# Pipeline order used by compute_match() to decide whether setting
+# status=MATCHED would be an advance or a regression (see
+# _set_matched_status below). Statuses not listed here (WITHDRAWN,
+# CLOSED, REJECTED, ARCHIVED, SKIPPED) are treated as "never regress",
+# since they're terminal/user-decided states outside the normal pipeline.
+_JOB_STAGE_ORDER = [
+    JobStatus.DISCOVERED, JobStatus.ANALYZED, JobStatus.MATCHED, JobStatus.SHORTLISTED,
+    JobStatus.PREPARING, JobStatus.READY_TO_APPLY, JobStatus.APPLIED,
+]
+
+# Bumped whenever _score_components()/compute_match()'s scoring logic
+# changes meaningfully -- stored on JobMatch.algorithm_version so Step 6's
+# match-score analytics never silently mixes results from different
+# scoring logic together (spec section 19).
+MATCH_ALGORITHM_VERSION = "v1"
+
 # Categories the schema (Step 1) simply has no field for. A missing
 # security clearance is a fact; an untracked concept is not -- so these
 # always come back "unknown", never "missing", per the never-assume rules.
@@ -470,6 +486,24 @@ def _generate_explanation(
         return fallback
 
 
+def _advance_status_to_matched(job: Job) -> None:
+    """compute_match() runs every time a match score is (re)computed --
+    including internally, e.g. cv_customization_service calling it twice
+    to report a CV's match_score_before/after. Unconditionally setting
+    status=MATCHED there would silently regress a job the user had
+    already manually moved further along (e.g. shortlisted, preparing) --
+    exactly the kind of automatic status change Step 6 exists to prevent
+    (a job must never be advanced or reset by something other than an
+    explicit, meaningful step). Only ever moves status forward from an
+    earlier pipeline stage, never backward, and never touches a
+    terminal/user-decided status (withdrawn/closed/rejected/archived/skipped)."""
+
+    if job.status not in _JOB_STAGE_ORDER:
+        return
+    if _JOB_STAGE_ORDER.index(job.status) < _JOB_STAGE_ORDER.index(JobStatus.MATCHED):
+        job.status = JobStatus.MATCHED
+
+
 def compute_match(
     db: Session,
     job: Job,
@@ -529,11 +563,13 @@ def compute_match(
     match.strengths = strengths
     match.weaknesses = weaknesses
     match.reasoning_summary = reasoning_summary
+    match.score_components = {key: round(value * 100) for key, value in components.items()}
+    match.algorithm_version = MATCH_ALGORITHM_VERSION
 
     if not existing:
         db.add(match)
 
-    job.status = JobStatus.MATCHED
+    _advance_status_to_matched(job)
 
     db.commit()
     db.refresh(match)

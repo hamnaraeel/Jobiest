@@ -27,20 +27,24 @@ from app.api import (
     projects,
     research,
     skills,
+    tracking,
 )
 
 app = FastAPI(
     title="Career Agent",
     description=(
         "Single source of truth for verified career facts, job ingestion/analysis/"
-        "matching, truthful source-traceable CV customization, and locally-generated "
-        "(Ollama, no paid API) cover letters and application answers. Nothing here is "
-        "ever invented: every fact carries a `verified` flag, every match status "
-        "traces back to specific profile evidence or is honestly marked missing/"
-        "unknown, and every generated claim traces back to a real profile row or is "
-        "rejected/flagged for manual input rather than guessed."
+        "matching, truthful source-traceable CV customization, locally-generated "
+        "(Ollama, no paid API) cover letters and application answers, a browser-"
+        "assisted (never autonomous) application workflow, and job-search tracking "
+        "with deterministic analytics. Nothing here is ever invented: every fact "
+        "carries a `verified` flag, every match status traces back to specific "
+        "profile evidence or is honestly marked missing/unknown, every generated "
+        "claim traces back to a real profile row or is rejected/flagged for manual "
+        "input rather than guessed, and no submit button is ever clicked without "
+        "explicit user approval."
     ),
-    version="0.4.0",
+    version="0.6.0",
 )
 
 app.include_router(profile.router)
@@ -52,6 +56,24 @@ app.include_router(certifications.router)
 app.include_router(achievements.router)
 app.include_router(research.router)
 app.include_router(evidence.router)
+
+# Route matching is registration-order-sensitive: Starlette matches routes
+# in the order they were added and does not prefer a literal path segment
+# over a same-position `{param}` one. tracking.jobs_tracking_router's
+# `GET /jobs/search` and tracking.applications_tracking_router's
+# `GET /applications/search` / `GET /applications/export` must therefore
+# be registered before jobs.router's `GET /jobs/{job_id}` and
+# browser_applications.applications_router's `GET /applications/{application_id}`
+# -- otherwise "search"/"export" would be swallowed as the id path param
+# and 422 instead of reaching the intended endpoint.
+app.include_router(tracking.dashboard_router)
+app.include_router(tracking.jobs_tracking_router)
+app.include_router(tracking.applications_tracking_router)
+app.include_router(tracking.followups_router)
+app.include_router(tracking.analytics_router)
+app.include_router(tracking.notifications_router)
+app.include_router(tracking.calendar_router)
+
 app.include_router(jobs.router)
 app.include_router(cvs.jobs_cv_router)
 app.include_router(cvs.cvs_router)

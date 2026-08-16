@@ -101,6 +101,16 @@ class JobStatus(str, enum.Enum):
     MATCHED = "matched"
     SHORTLISTED = "shortlisted"
     SKIPPED = "skipped"
+    # Step 6: job-search tracking lifecycle, set manually by the user
+    # (or by Step 6 automation for APPLIED, mirroring an Application's
+    # submitted status) -- never inferred just from analysis/matching.
+    PREPARING = "preparing"
+    READY_TO_APPLY = "ready_to_apply"
+    APPLIED = "applied"
+    WITHDRAWN = "withdrawn"
+    CLOSED = "closed"
+    REJECTED = "rejected"
+    ARCHIVED = "archived"
 
 
 class RequirementCategory(str, enum.Enum):
@@ -206,6 +216,21 @@ class ApplicationStatus(str, enum.Enum):
     FAILED = "failed"
     ABANDONED = "abandoned"
     BLOCKED = "blocked"
+    # Step 6: post-submission tracking lifecycle. Only SUBMITTED is ever
+    # set automatically (by Step 5, on confirmed submission) -- everything
+    # from here on is a manual PATCH /applications/{id}/status update,
+    # each transition recorded in ApplicationStatusHistory.
+    UNDER_REVIEW = "under_review"
+    RECRUITER_CONTACT = "recruiter_contact"
+    INTERVIEW = "interview"
+    TECHNICAL_INTERVIEW = "technical_interview"
+    FINAL_INTERVIEW = "final_interview"
+    OFFER = "offer"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
+    GHOSTED = "ghosted"
+    CLOSED = "closed"
 
 
 class ApplicationEventType(str, enum.Enum):
@@ -223,6 +248,25 @@ class ApplicationEventType(str, enum.Enum):
     SUBMISSION_COMPLETED = "submission_completed"
     SUBMISSION_FAILED = "submission_failed"
     BLOCKED = "blocked"
+    # Step 6: job-search-tracking events, appended to the same append-only
+    # log ApplicationEvent already provides. APPLICATION_CREATED and
+    # SUBMISSION_COMPLETED (above) already cover "application_started"/
+    # "application_submitted" from the Step 6 spec -- not duplicated here.
+    DISCOVERED = "discovered"
+    ANALYZED = "analyzed"
+    SHORTLISTED = "shortlisted"
+    CV_GENERATED = "cv_generated"
+    COVER_LETTER_GENERATED = "cover_letter_generated"
+    RECRUITER_CONTACT = "recruiter_contact"
+    FOLLOW_UP = "follow_up"
+    INTERVIEW_SCHEDULED = "interview_scheduled"
+    INTERVIEW_COMPLETED = "interview_completed"
+    ASSESSMENT = "assessment"
+    OFFER_RECEIVED = "offer_received"
+    REJECTION = "rejection"
+    WITHDRAWAL = "withdrawal"
+    NOTE_ADDED = "note_added"
+    STATUS_CHANGED = "status_changed"
 
 
 class ApplicationFieldType(str, enum.Enum):
@@ -265,3 +309,64 @@ class ApplicationSessionStatus(str, enum.Enum):
     ACTIVE = "active"
     ENDED = "ended"
     ERROR = "error"
+
+
+# --- Step 6: job-search tracking, analytics, and follow-up management ---
+
+
+class PriorityLevel(str, enum.Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class FollowUpType(str, enum.Enum):
+    RECRUITER_FOLLOWUP = "recruiter_followup"
+    APPLICATION_FOLLOWUP = "application_followup"
+    INTERVIEW_FOLLOWUP = "interview_followup"
+    THANK_YOU = "thank_you"
+    CUSTOM = "custom"
+
+
+class FollowUpStatus(str, enum.Enum):
+    PENDING = "pending"
+    COMPLETED = "completed"
+    SKIPPED = "skipped"
+    CANCELLED = "cancelled"
+
+
+class InterviewType(str, enum.Enum):
+    RECRUITER = "recruiter"
+    PHONE_SCREEN = "phone_screen"
+    TECHNICAL = "technical"
+    BEHAVIORAL = "behavioral"
+    HIRING_MANAGER = "hiring_manager"
+    FINAL = "final"
+    OTHER = "other"
+
+
+class InterviewStatus(str, enum.Enum):
+    SCHEDULED = "scheduled"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    RESCHEDULED = "rescheduled"
+    NO_SHOW = "no_show"
+
+
+class OfferStatus(str, enum.Enum):
+    RECEIVED = "received"
+    NEGOTIATING = "negotiating"
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
+    EXPIRED = "expired"
+
+
+class ApplicationNoteType(str, enum.Enum):
+    GENERAL = "general"
+    RECRUITER = "recruiter"
+    INTERVIEW = "interview"
+    TECHNICAL = "technical"
+    FOLLOWUP = "followup"
+    OFFER = "offer"
+    REJECTION = "rejection"

@@ -26,6 +26,15 @@ An AI-powered job application agent, built step by step.
   additionally requires your explicit `POST
   /applications/{id}/approve-submission`. See
   [`docs/browser-application-assistant.md`](docs/browser-application-assistant.md).
+- **Step 6 — Job-Search Tracking, Analytics & Follow-Up Management**: the
+  central source of truth for the whole job search -- status history that's
+  never overwritten, a unified timeline, interviews/offers/notes/tags/
+  priority, follow-up reminders (never sent automatically), deterministic
+  analytics (funnel, conversion rates, response/interview/offer time,
+  company/role/skill/source/CV-version performance), a dashboard, and
+  CSV/JSON export. Every metric is a plain SQL/Python calculation -- no
+  LLM involved. See
+  [`docs/job-search-tracking.md`](docs/job-search-tracking.md).
 
 This is an assisted workflow, not an autonomous agent -- nothing is ever
 submitted without a human reviewing it first.
@@ -132,6 +141,8 @@ BROWSER_SCREENSHOTS=false
 APPLICATION_SESSIONS_DIR=../data/application_sessions
 FIELD_CONFIDENCE_HIGH=0.90
 FIELD_CONFIDENCE_MEDIUM=0.70
+DEFAULT_FOLLOWUP_DAYS=7
+TIMEZONE=UTC
 ```
 
 `OPENAI_API_KEY` powers job analysis and CV planning/content generation
@@ -152,7 +163,9 @@ you can watch/log in/solve a CAPTCHA manually.
 `PDFLATEX_PATH` lets you point at a non-standard `pdflatex` binary if it's
 not on `PATH`; `COVER_LETTER_MIN_WORDS`/`MAX_WORDS` set the target length
 range (`length: "short"|"medium"|"long"` in the generate request nudges
-within/around that range).
+within/around that range). `DEFAULT_FOLLOWUP_DAYS` (Step 6) is only used
+to compute a *suggested* follow-up date -- nothing is scheduled or sent
+automatically.
 
 ## 4. Database migration
 
@@ -545,6 +558,120 @@ Full Step 5 endpoint list: `POST /jobs/{id}/apply`, `GET /applications`,
 See `docs/browser-application-assistant.md` for the full safety model and
 architecture.
 
+## 7f. Step 6: job-search tracking, analytics, and follow-up management
+
+The dashboard -- everything at a glance:
+
+```bash
+curl http://localhost:8000/dashboard | python3 -m json.tool
+```
+
+Search and filter jobs/applications (used by search/filter/sort spec
+tests; supports company, role, status, priority, tag, source, match
+score, deadline, location, remote, date, and `sort=newest|oldest|
+highest_match|lowest_match|deadline|priority|latest_status_change`):
+
+```bash
+curl "http://localhost:8000/jobs/search?status=shortlisted&sort=deadline"
+curl "http://localhost:8000/applications/search?min_match_score=80&sort=priority"
+```
+
+Manually move an application forward -- every change is recorded, never
+overwritten:
+
+```bash
+curl -X PATCH http://localhost:8000/applications/1/status \
+  -H "Content-Type: application/json" \
+  -d '{"status": "interview", "reason": "Recruiter scheduled a technical interview"}'
+
+curl http://localhost:8000/applications/1/status-history
+curl http://localhost:8000/applications/1/timeline | python3 -m json.tool
+```
+
+Record an interview, an offer, a follow-up, and a note:
+
+```bash
+curl -X POST http://localhost:8000/applications/1/interviews \
+  -H "Content-Type: application/json" \
+  -d '{"type": "technical", "scheduled_at": "2026-08-20T15:00:00Z", "interviewer": "Jane Doe"}'
+
+curl -X POST http://localhost:8000/applications/1/offers \
+  -H "Content-Type: application/json" \
+  -d '{"company": "Example Company", "role": "ML Engineer", "salary": 140000, "currency": "USD"}'
+
+curl http://localhost:8000/applications/1/followups/suggested
+curl -X POST http://localhost:8000/applications/1/followups \
+  -H "Content-Type: application/json" -d '{"due_date": "2026-08-22", "subject": "Thank the interviewer"}'
+
+curl -X POST http://localhost:8000/applications/1/notes \
+  -H "Content-Type: application/json" -d '{"content": "Recruiter is John.", "note_type": "recruiter"}'
+```
+
+Tags, priority, and archiving (never deletes):
+
+```bash
+curl -X PATCH http://localhost:8000/jobs/1/tags -H "Content-Type: application/json" -d '{"tags": ["dream-company", "ML"]}'
+curl -X PATCH http://localhost:8000/applications/1/priority -H "Content-Type: application/json" -d '{"priority": "high"}'
+curl -X POST http://localhost:8000/applications/1/archive
+```
+
+Analytics -- every number is a plain SQL/Python calculation, formulas
+documented in `docs/job-search-tracking.md`:
+
+```bash
+curl http://localhost:8000/analytics/overview | python3 -m json.tool     # funnel, conversion rates, time-to-X, velocity
+curl http://localhost:8000/analytics/companies
+curl http://localhost:8000/analytics/skills                              # demand + potential skill gaps
+curl http://localhost:8000/analytics/match-scores
+curl http://localhost:8000/analytics/cv-versions
+curl http://localhost:8000/analytics/weekly
+```
+
+What's coming up, and export:
+
+```bash
+curl http://localhost:8000/notifications/upcoming
+curl http://localhost:8000/calendar/upcoming
+curl "http://localhost:8000/applications/export?format=csv" -o applications.csv
+```
+
+Back up the database locally:
+
+```bash
+python -m app.cli backup
+```
+
+Full Step 6 endpoint list: `GET /dashboard`, `GET /jobs/search`,
+`POST /jobs/{id}/archive`, `PATCH /jobs/{id}/status`,
+`PATCH /jobs/{id}/tags`, `PATCH /jobs/{id}/priority`,
+`GET /jobs/{id}/duplicates`, `POST/GET /jobs/{id}/notes`,
+`GET /applications/search`, `GET /applications/export`,
+`GET /applications/{id}/timeline`, `GET /applications/{id}/readiness`,
+`GET /applications/{id}/interview-context`,
+`PATCH /applications/{id}/status`,
+`GET /applications/{id}/status-history`,
+`POST /applications/{id}/events`, `POST /applications/{id}/archive`,
+`PATCH /applications/{id}/tags`, `PATCH /applications/{id}/priority`,
+`POST/GET /applications/{id}/interviews`,
+`PATCH /applications/{id}/interviews/{id}`,
+`GET /applications/{id}/followups/suggested`,
+`POST/GET /applications/{id}/followups`, `PATCH /followups/{id}`,
+`POST/GET /applications/{id}/offers`,
+`PATCH /applications/{id}/offers/{id}`,
+`POST/GET /applications/{id}/notes`, `GET /notifications/upcoming`,
+`GET /calendar/upcoming`, `GET /analytics/overview`,
+`GET /analytics/status`, `GET /analytics/companies`,
+`GET /analytics/roles`, `GET /analytics/skills`,
+`GET /analytics/sources`, `GET /analytics/match-scores`,
+`GET /analytics/cv-versions`, `GET /analytics/weekly`,
+`GET /analytics/monthly`.
+
+See `docs/job-search-tracking.md` for the full schema, analytics
+formulas, and design rationale (including two real bugs the Step 6 test
+suite caught: `compute_match()` silently regressing an already-advanced
+job's status, and CV/cover-letter analytics silently collapsing rows that
+happen to share the same version name).
+
 ## 8. Testing
 
 Tests run against a real PostgreSQL database (with pgvector) — point
@@ -581,6 +708,24 @@ platform detection, no browser needed) and
 CAPTCHA/login-required detection and both the dry-run-blocks and
 explicit-approval-enables submission proofs).
 
+`tests/test_tracking.py` covers Step 6 against a synthetic dataset (20
+jobs, 10 shortlisted, 8 applications, 3 responses, 2 interviews, 1 offer
+-- entirely fake companies/data) verified against hand-computed expected
+values: status history, timeline, follow-ups, interviews, offers, notes,
+tags, priority, duplicate detection, deadline handling, every analytics
+formula, readiness, CSV/JSON export, archiving, search/filter/sort,
+timezone-awareness, and cascading deletes (no orphaned rows).
+`tests/test_end_to_end.py` drives the complete Step 1 → Step 6 workflow
+through the real API in one pass -- profile, job analysis/match, tailored
+CV, cover letter + answers, a real (mocked-AI, real-Playwright) Step 5
+submission, and Step 6 tracking through to an `interview` status with a
+pending follow-up -- and is what originally caught two real bugs (now
+fixed and covered by regression tests): `compute_match()` silently
+regressing an already-shortlisted job's status back to `matched`, and
+`GET /applications/{id}/cancel` overwriting a just-confirmed `submitted`
+status with `abandoned` (fixed by not calling `/cancel` after a
+successful submission -- see `docs/job-search-tracking.md`).
+
 ## Project structure
 
 ```
@@ -607,7 +752,15 @@ career-agent/
 │   │   │   ├── application_answer_service.py Step 4: question classification, answers, length limits
 │   │   │   ├── answer_validation_service.py  Step 4: deterministic claim validation (shared)
 │   │   │   ├── application_material_service.py Step 4: read-only materials package assembly
-│   │   │   └── application_service.py     Step 5: DB orchestration for the browser workflow
+│   │   │   ├── application_service.py     Step 5: DB orchestration for the browser workflow
+│   │   │   ├── tracking_service.py        Step 6: status history, timeline, readiness, snapshot, duplicates
+│   │   │   ├── followup_service.py        Step 6: follow-up reminders (suggested only, never sent)
+│   │   │   ├── interview_service.py       Step 6: interview CRUD
+│   │   │   ├── offer_service.py           Step 6: offer CRUD
+│   │   │   ├── note_service.py            Step 6: application/job notes
+│   │   │   ├── analytics_service.py       Step 6: funnel, conversion rates, all analytics (SQL/Python only)
+│   │   │   └── export_service.py          Step 6: CSV/JSON application export
+│   │   ├── cli.py                         Step 6: `python -m app.cli backup`
 │   │   ├── browser/                       Step 5: Playwright mechanics
 │   │   │   ├── browser_manager.py         Session lifecycle (persistent Chromium context)
 │   │   │   ├── page_analyzer.py           CAPTCHA / login-required detection
@@ -631,7 +784,7 @@ career-agent/
 │   │   ├── scripts/
 │   │   │   └── analyze_job.py     Manual end-to-end demo script (Step 2)
 │   │   └── db/                    Engine/session, declarative Base
-│   ├── alembic/                   Migrations (Steps 1-5, applied in order)
+│   ├── alembic/                   Migrations (Steps 1-6, applied in order)
 │   ├── tests/                     pytest suite + tests/fixtures/ (local HTML, Step 5 only)
 │   ├── requirements.txt
 │   ├── pytest.ini
@@ -647,6 +800,7 @@ career-agent/
 │   ├── application_materials/     Generated cover letter .tex/.pdf output
 │   ├── browser_profile/           Persistent Chromium user-data dir (Step 5, gitignored)
 │   ├── application_sessions/      Per-application screenshots if enabled (Step 5, gitignored)
+│   ├── backups/                   `python -m app.cli backup` output (Step 6, gitignored)
 │   └── README.md                  How to fill in career_profile.json
 ├── docs/
 │   ├── career-profile-schema.md   Step 1: full schema + verification rules
@@ -654,6 +808,7 @@ career-agent/
 │   ├── cv-generation.md           Step 3: pipeline, validation, versioning, approval
 │   ├── cover-letters-and-applications.md  Step 4: Ollama pipeline, validation, never-guess fields
 │   ├── browser-application-assistant.md   Step 5: safety model, field mapping, architecture
+│   ├── job-search-tracking.md     Step 6: schema, analytics formulas, design rationale
 │   └── examples/                  Real generated example output for Steps 3-4
 └── README.md
 ```
@@ -661,8 +816,12 @@ career-agent/
 ## What's next (not built yet)
 
 Platform-specific adapters (Greenhouse/Lever/Workday/...) beyond the
-generic HTML-form adapter, and outcome tracking after submission
-(interview/rejection/offer status). `platform_detector.register_adapter()`
-already exists for the former without needing to touch anything else;
-`Application.status` and its event log are the exact foundation the
-latter would build on.
+generic HTML-form adapter -- `platform_detector.register_adapter()`
+already exists for this without needing to touch anything else. An
+AI interview-prep coach: `GET /applications/{id}/interview-context`
+(Step 6) already assembles everything such a step would need (job
+description, required/matched skills, CV version, projects/experience
+used, cover letter, notes) from data that already exists, with no new AI
+call of its own -- deliberately built as the exact handoff surface for
+it. External notifications (email/calendar/push) beyond the current
+read-only `GET /notifications/upcoming` / `GET /calendar/upcoming`.

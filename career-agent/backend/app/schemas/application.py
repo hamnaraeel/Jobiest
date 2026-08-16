@@ -8,6 +8,7 @@ from app.models.enums import (
     ApplicationFieldType,
     ApplicationPlatform,
     ApplicationStatus,
+    PriorityLevel,
 )
 
 
@@ -16,6 +17,7 @@ class ApplicationCreateRequest(BaseModel):
     cv_version_id: int | None = Field(default=None, description="Defaults to the latest approved CV for this job.")
     cover_letter_id: int | None = Field(default=None, description="Defaults to the latest approved cover letter for this job.")
     force: bool = Field(default=False, description="Create a new attempt even if one was already submitted for this job.")
+    source: str | None = Field(default=None, description="Where this application was submitted from, e.g. LinkedIn, Indeed, referral.")
 
 
 class ApplicationRead(BaseModel):
@@ -33,6 +35,11 @@ class ApplicationRead(BaseModel):
     started_at: datetime | None
     submitted_at: datetime | None
     confirmation_reference: str | None
+    priority: PriorityLevel
+    tags: list[str] = Field(default_factory=list)
+    source: str | None
+    archived: bool
+    material_snapshot: dict | None
     created_at: datetime
     updated_at: datetime
 

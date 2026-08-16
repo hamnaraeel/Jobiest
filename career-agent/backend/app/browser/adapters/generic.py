@@ -27,6 +27,7 @@ from app.models.application_event import ApplicationEvent
 from app.models.application_field import ApplicationField
 from app.models.application_question import ApplicationQuestion
 from app.models.enums import ApplicationEventType, ApplicationFieldStatus, ApplicationFieldType, ApplicationStatus
+from app.services import tracking_service
 from app.services.profile_service import get_default_profile
 
 logger = logging.getLogger("app.browser.adapters.generic")
@@ -250,10 +251,11 @@ class GenericApplicationAdapter(BaseApplicationAdapter):
 
         confirmed, reference = await self._detect_confirmation(page, before_url)
         if confirmed:
-            application.status = ApplicationStatus.SUBMITTED
-            application.submitted_at = datetime.now(timezone.utc)
-            application.confirmation_reference = reference
-            db.commit()
+            # Step 6: the only place Application.status becomes SUBMITTED --
+            # via tracking_service so the transition is recorded in
+            # ApplicationStatusHistory and the submission material snapshot
+            # is frozen, same as any other status change (spec section 5).
+            tracking_service.mark_submitted(db, application, reference)
             log_event(
                 db, application, ApplicationEventType.SUBMISSION_COMPLETED, "Submission confirmed.",
                 {"reference": reference, "url": page.url, "button_text": button_text},

@@ -25,3 +25,9 @@ from app.models.application import Application  # noqa: F401
 from app.models.application_event import ApplicationEvent  # noqa: F401
 from app.models.application_field import ApplicationField  # noqa: F401
 from app.models.application_session import ApplicationSession  # noqa: F401
+from app.models.application_status_history import ApplicationStatusHistory  # noqa: F401
+from app.models.application_followup import ApplicationFollowUp  # noqa: F401
+from app.models.interview import Interview  # noqa: F401
+from app.models.offer import Offer  # noqa: F401
+from app.models.application_note import ApplicationNote  # noqa: F401
+from app.models.job_note import JobNote  # noqa: F401

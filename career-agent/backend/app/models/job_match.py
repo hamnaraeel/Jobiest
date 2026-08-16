@@ -1,4 +1,4 @@
-from sqlalchemy import JSON, Enum, ForeignKey, Integer, Text
+from sqlalchemy import JSON, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -29,5 +29,15 @@ class JobMatch(Base, TimestampMixin):
     strengths: Mapped[list] = mapped_column(JSON, default=list)
     weaknesses: Mapped[list] = mapped_column(JSON, default=list)
     reasoning_summary: Mapped[str | None] = mapped_column(Text)
+
+    # Step 6: per-dimension score breakdown (required_skills, preferred_skills,
+    # experience, education, technical_alignment, projects, research,
+    # other_requirements -- see job_matching_service._score_components()),
+    # persisted so /analytics/match-scores can report on it without
+    # recomputing. algorithm_version records which scoring logic produced
+    # this row, so a future algorithm change is visible in the data rather
+    # than silently mixing incomparable scores.
+    score_components: Mapped[dict] = mapped_column(JSON, default=dict)
+    algorithm_version: Mapped[str] = mapped_column(String(20), default="v1", nullable=False)
 
     job: Mapped["Job"] = relationship(back_populates="match")
