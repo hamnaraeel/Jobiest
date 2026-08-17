@@ -22,6 +22,7 @@ from app.api import (
     education,
     evidence,
     experience,
+    intelligence,
     jobs,
     profile,
     projects,
@@ -44,7 +45,7 @@ app = FastAPI(
         "input rather than guessed, and no submit button is ever clicked without "
         "explicit user approval."
     ),
-    version="0.6.0",
+    version="0.7.0",
 )
 
 app.include_router(profile.router)
@@ -82,6 +83,10 @@ app.include_router(applications.cover_letters_router)
 app.include_router(applications.answers_router)
 app.include_router(browser_applications.apply_router)
 app.include_router(browser_applications.applications_router)
+
+app.include_router(intelligence.intelligence_router)
+app.include_router(intelligence.interview_prep_router)
+app.include_router(intelligence.applications_rejection_router)
 
 
 @app.get("/health", tags=["health"])

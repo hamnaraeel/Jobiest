@@ -31,3 +31,5 @@ from app.models.interview import Interview  # noqa: F401
 from app.models.offer import Offer  # noqa: F401
 from app.models.application_note import ApplicationNote  # noqa: F401
 from app.models.job_note import JobNote  # noqa: F401
+from app.models.recommendation import Recommendation  # noqa: F401
+from app.models.user_job_search_goal import UserJobSearchGoal  # noqa: F401

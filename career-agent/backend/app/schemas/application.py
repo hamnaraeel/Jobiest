@@ -9,6 +9,7 @@ from app.models.enums import (
     ApplicationPlatform,
     ApplicationStatus,
     PriorityLevel,
+    RejectionReason,
 )
 
 
@@ -40,6 +41,8 @@ class ApplicationRead(BaseModel):
     source: str | None
     archived: bool
     material_snapshot: dict | None
+    rejection_reason: RejectionReason | None
+    rejection_reason_custom: str | None
     created_at: datetime
     updated_at: datetime
 

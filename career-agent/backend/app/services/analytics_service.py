@@ -66,11 +66,11 @@ def _duration_stats(deltas_days: list[float]) -> dict:
     }
 
 
-def _applications_with_relations(db: Session) -> list[Application]:
+def applications_with_relations(db: Session) -> list[Application]:
     return db.execute(select(Application)).scalars().unique().all()
 
 
-def _has_response(application: Application) -> bool:
+def has_response(application: Application) -> bool:
     return any(h.new_status in RESPONSE_STATUSES for h in application.status_history)
 
 
@@ -99,9 +99,9 @@ def funnel(db: Session) -> dict:
     discovered = db.execute(select(func.count(Job.id))).scalar_one()
     shortlisted = db.execute(select(func.count(Job.id)).where(Job.status.in_(SHORTLISTED_OR_LATER))).scalar_one()
 
-    applications = _applications_with_relations(db)
+    applications = applications_with_relations(db)
     applied_apps = [a for a in applications if a.submitted_at is not None]
-    responded_apps = [a for a in applied_apps if _has_response(a)]
+    responded_apps = [a for a in applied_apps if has_response(a)]
     interviewed_apps = [a for a in applied_apps if a.interviews]
     offered_apps = [a for a in applied_apps if a.offers]
     accepted = db.execute(select(func.count(Offer.id)).where(Offer.status == OfferStatus.ACCEPTED)).scalar_one()
@@ -127,7 +127,7 @@ def conversion_rates(f: dict) -> dict:
 
 
 def response_time_stats(db: Session) -> dict:
-    applications = _applications_with_relations(db)
+    applications = applications_with_relations(db)
     deltas = []
     for a in applications:
         if a.submitted_at is None:
@@ -139,7 +139,7 @@ def response_time_stats(db: Session) -> dict:
 
 
 def interview_time_stats(db: Session) -> dict:
-    applications = _applications_with_relations(db)
+    applications = applications_with_relations(db)
     deltas = []
     for a in applications:
         if a.submitted_at is None:
@@ -151,7 +151,7 @@ def interview_time_stats(db: Session) -> dict:
 
 
 def offer_time_stats(db: Session) -> dict:
-    applications = _applications_with_relations(db)
+    applications = applications_with_relations(db)
     deltas = []
     for a in applications:
         if a.submitted_at is None:
@@ -208,7 +208,7 @@ def status_breakdown(db: Session) -> dict:
 
 
 def _group_applications_by(db: Session, key_fn) -> dict:
-    applications = _applications_with_relations(db)
+    applications = applications_with_relations(db)
     groups: dict[str, list[Application]] = defaultdict(list)
     for a in applications:
         if a.submitted_at is None or a.job is None:
@@ -221,7 +221,7 @@ def _group_applications_by(db: Session, key_fn) -> dict:
     for key, apps in groups.items():
         interviews = sum(1 for a in apps if a.interviews)
         offers = sum(1 for a in apps if a.offers)
-        responses = sum(1 for a in apps if _has_response(a))
+        responses = sum(1 for a in apps if has_response(a))
         match_scores = [a.job.match.overall_score for a in apps if a.job.match]
         result[key] = {
             "applications": len(apps), "interviews": interviews, "offers": offers,
@@ -299,7 +299,7 @@ def match_score_analysis(db: Session) -> dict:
     40) -- purely descriptive ("observed application performance"), never
     framed as a causal claim."""
 
-    applications = _applications_with_relations(db)
+    applications = applications_with_relations(db)
     result = {}
     for low, high in MATCH_SCORE_BUCKETS:
         label = f"{low}-{high}"
@@ -323,7 +323,7 @@ def cv_version_analytics(db: Session) -> dict:
     (spec sections 42-43). Deliberately worded as "observed application
     performance" everywhere this is surfaced -- never a causal claim."""
 
-    applications = [a for a in _applications_with_relations(db) if a.submitted_at is not None]
+    applications = [a for a in applications_with_relations(db) if a.submitted_at is not None]
 
     def _by(attr_id, version_lookup):
         groups: dict[int, list[Application]] = defaultdict(list)
@@ -425,7 +425,7 @@ def dashboard(db: Session) -> dict:
     jobs_discovered = db.execute(select(func.count(Job.id)).where(Job.status == JobStatus.DISCOVERED)).scalar_one()
     jobs_shortlisted = db.execute(select(func.count(Job.id)).where(Job.status.in_(SHORTLISTED_OR_LATER))).scalar_one()
 
-    applications = _applications_with_relations(db)
+    applications = applications_with_relations(db)
     submitted = [a for a in applications if a.submitted_at is not None]
     prepared = [a for a in applications if a.status not in (ApplicationStatus.ABANDONED, ApplicationStatus.FAILED)]
     under_review = [a for a in submitted if a.status == ApplicationStatus.UNDER_REVIEW]

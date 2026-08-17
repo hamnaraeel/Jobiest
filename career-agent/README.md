@@ -35,9 +35,21 @@ An AI-powered job application agent, built step by step.
   CSV/JSON export. Every metric is a plain SQL/Python calculation -- no
   LLM involved. See
   [`docs/job-search-tracking.md`](docs/job-search-tracking.md).
+- **Step 7 — Job Search Intelligence & Recommendations**: learns from
+  your historical activity to recommend which jobs to prioritize, which
+  skills to close gaps in, which CV/source/role has performed best, and
+  why rejections might be happening -- every recommendation carries a
+  WHAT + WHY + EVIDENCE + CONFIDENCE, and the user decides whether to
+  accept, dismiss, or complete it. Scoring is deterministic; the local
+  Ollama model is only used to explain already-computed evidence (with
+  output validation that discards any unsupported statistic) and to
+  generate interview prep questions/draft answers grounded only in your
+  verified Career Profile. See
+  [`docs/job-search-intelligence.md`](docs/job-search-intelligence.md).
 
 This is an assisted workflow, not an autonomous agent -- nothing is ever
-submitted without a human reviewing it first.
+submitted, or changed in your Career Profile, without a human deciding
+to do so first.
 
 ## 1. Installation
 
@@ -672,6 +684,101 @@ suite caught: `compute_match()` silently regressing an already-advanced
 job's status, and CV/cover-letter analytics silently collapsing rows that
 happen to share the same version name).
 
+## 7g. Step 7: job search intelligence & recommendations
+
+Generate recommendations from your current history, then review, accept,
+or dismiss them:
+
+```bash
+curl -X POST http://localhost:8000/intelligence/recommendations/generate | python3 -m json.tool
+curl http://localhost:8000/intelligence/recommendations
+curl -X POST http://localhost:8000/intelligence/recommendations/1/accept
+```
+
+Every recommendation carries its own reasoning -- nothing is ever
+unexplained:
+
+```json
+{
+  "type": "job_priority",
+  "title": "Prioritize: Machine Learning Engineer at Example Company",
+  "description": "Priority 92/100. Match score: 94% Required skill coverage: 92% Matches your target role 'ML Engineer'.",
+  "confidence": 0.83,
+  "confidence_reason": "Based on 32 historical data points.",
+  "evidence": {"score": 92, "factors": {"match_score": 0.94, "required_skill_coverage": 0.92}},
+  "action": "Review tailored CV and prepare application."
+}
+```
+
+Per-job and per-application intelligence (priority score, opportunity
+score, CV gap analysis, interview-prep context, all with reasons):
+
+```bash
+curl http://localhost:8000/intelligence/jobs/1 | python3 -m json.tool
+curl http://localhost:8000/intelligence/applications/1 | python3 -m json.tool
+```
+
+Skill demand and gaps across every analyzed job -- never a claim that
+you "need" a skill, only that it's frequently requested:
+
+```bash
+curl http://localhost:8000/intelligence/skills/gaps | python3 -m json.tool
+curl http://localhost:8000/intelligence/skills/demand
+```
+
+Career-level view, weekly review, and personalized strategy:
+
+```bash
+curl http://localhost:8000/intelligence/career | python3 -m json.tool
+curl http://localhost:8000/intelligence/weekly-review | python3 -m json.tool
+curl http://localhost:8000/intelligence/strategy | python3 -m json.tool
+```
+
+Configure your own job-search goals (never assumed) and track progress
+against them (never phrased as a failure):
+
+```bash
+curl -X PUT http://localhost:8000/intelligence/goals \
+  -H "Content-Type: application/json" \
+  -d '{"applications_per_week": 10, "interviews_per_month": 3}'
+curl http://localhost:8000/intelligence/goals/progress
+```
+
+Interview preparation -- questions and draft answers, both grounded only
+in the actual job description and your verified Career Profile (requires
+`OLLAMA_MODEL`, same as Step 4):
+
+```bash
+curl -X POST http://localhost:8000/interview-prep/questions \
+  -H "Content-Type: application/json" -d '{"application_id": 1}' | python3 -m json.tool
+
+curl -X POST http://localhost:8000/interview-prep/answer \
+  -H "Content-Type: application/json" \
+  -d '{"application_id": 1, "question": "Tell me about a challenging project.", "star": true}'
+```
+
+Record why an application was rejected (only ever set by you -- never
+inferred):
+
+```bash
+curl -X PATCH http://localhost:8000/applications/1/rejection-reason \
+  -H "Content-Type: application/json" -d '{"rejection_reason": "skills_gap"}'
+```
+
+Full Step 7 endpoint list: `GET/POST /intelligence/recommendations*`,
+`GET /intelligence/jobs/{id}`, `GET /intelligence/applications/{id}`,
+`GET /intelligence/skills`, `GET /intelligence/skills/gaps`,
+`GET /intelligence/skills/demand`, `GET /intelligence/career`,
+`GET /intelligence/weekly-review`, `GET /intelligence/strategy`,
+`GET /intelligence/applications/{id}/interview-preparation`,
+`GET/PUT /intelligence/goals`, `GET /intelligence/goals/progress`,
+`POST /interview-prep/questions`, `POST /interview-prep/answer`,
+`PATCH /applications/{id}/rejection-reason`.
+
+See `docs/job-search-intelligence.md` for the priority-score formula,
+skill-gap ranking formula, confidence system, and exactly how LLM output
+is validated before it's ever shown to you.
+
 ## 8. Testing
 
 Tests run against a real PostgreSQL database (with pgvector) — point
@@ -715,14 +822,25 @@ values: status history, timeline, follow-ups, interviews, offers, notes,
 tags, priority, duplicate detection, deadline handling, every analytics
 formula, readiness, CSV/JSON export, archiving, search/filter/sort,
 timezone-awareness, and cascading deletes (no orphaned rows).
-`tests/test_end_to_end.py` drives the complete Step 1 → Step 6 workflow
+`tests/test_intelligence.py` covers Step 7 against a synthetic dataset
+(50 jobs, 30 shortlisted, 25 applications, 8 responses, 5 interviews, 2
+offers, 3 CV versions, 4 sources, 5 roles, a real AWS skill gap, 6
+rejections with varying reasons) across all 20 categories from spec
+section 62, including a direct test that the LLM output validator strips
+a fabricated statistic and that an interview answer claiming an
+unsupported skill is flagged rather than silently served.
+
+`tests/test_end_to_end.py` drives the complete Step 1 → Step 7 workflow
 through the real API in one pass -- profile, job analysis/match, tailored
 CV, cover letter + answers, a real (mocked-AI, real-Playwright) Step 5
-submission, and Step 6 tracking through to an `interview` status with a
-pending follow-up -- and is what originally caught two real bugs (now
-fixed and covered by regression tests): `compute_match()` silently
+submission, Step 6 tracking through to an `interview` status with a
+pending follow-up, and Step 7 intelligence (priority/opportunity scoring,
+recommendation generation + acceptance, weekly review, career strategy)
+-- printing the same "AI JOB SEARCH INTELLIGENCE" summary shape as spec
+section 64's example. This test is what originally caught two real bugs
+(now fixed and covered by regression tests): `compute_match()` silently
 regressing an already-shortlisted job's status back to `matched`, and
-`GET /applications/{id}/cancel` overwriting a just-confirmed `submitted`
+`POST /applications/{id}/cancel` overwriting a just-confirmed `submitted`
 status with `abandoned` (fixed by not calling `/cancel` after a
 successful submission -- see `docs/job-search-tracking.md`).
 
@@ -759,8 +877,20 @@ career-agent/
 │   │   │   ├── offer_service.py           Step 6: offer CRUD
 │   │   │   ├── note_service.py            Step 6: application/job notes
 │   │   │   ├── analytics_service.py       Step 6: funnel, conversion rates, all analytics (SQL/Python only)
-│   │   │   └── export_service.py          Step 6: CSV/JSON application export
+│   │   │   ├── export_service.py          Step 6: CSV/JSON application export
+│   │   │   ├── recommendation_engine.py   Step 7: the only writer of Recommendation rows
+│   │   │   └── goal_service.py            Step 7: UserJobSearchGoal CRUD + progress comparison
 │   │   ├── cli.py                         Step 6: `python -m app.cli backup`
+│   │   ├── intelligence/                  Step 7: deterministic analyzers (no LLM except explainer/interview_analyzer)
+│   │   │   ├── confidence.py              Small-sample-protected confidence scoring
+│   │   │   ├── job_prioritizer.py         Priority score + opportunity score
+│   │   │   ├── skill_gap_analyzer.py      Demand/gap ranking (frequency x importance x relevance)
+│   │   │   ├── cv_analyzer.py             Profile-vs-CV and job-vs-CV gap analysis, keyword coverage
+│   │   │   ├── rejection_analyzer.py      Rejection pattern analysis
+│   │   │   ├── career_insights.py         Company/source/role strategy, career direction, weekly review
+│   │   │   ├── application_analyzer.py    Per-job/per-application intelligence assembly
+│   │   │   ├── interview_analyzer.py      Interview prep context/output + question/answer generation
+│   │   │   └── recommendation_explainer.py  LLM explanation layer + output validation
 │   │   ├── browser/                       Step 5: Playwright mechanics
 │   │   │   ├── browser_manager.py         Session lifecycle (persistent Chromium context)
 │   │   │   ├── page_analyzer.py           CAPTCHA / login-required detection
@@ -780,11 +910,15 @@ career-agent/
 │   │   │   ├── cv_prompts.py       Step 3 prompts (CV_PLAN_PROMPT_V1, ...)
 │   │   │   ├── cv_structured_outputs.py  Step 3 LLM output schemas
 │   │   │   ├── cover_letter_prompts.py   Step 4 prompts (COVER_LETTER_PROMPT_V1)
-│   │   │   └── application_prompts.py    Step 4 prompts (answer generation + shortening)
+│   │   │   ├── application_prompts.py    Step 4 prompts (answer generation + shortening)
+│   │   │   ├── interview_prep_prompts.py    Step 7 prompts (questions + draft answers)
+│   │   │   ├── interview_prep_outputs.py    Step 7 LLM output schemas
+│   │   │   ├── recommendation_prompts.py    Step 7 prompt (evidence -> explanation)
+│   │   │   └── recommendation_outputs.py    Step 7 LLM output schema
 │   │   ├── scripts/
 │   │   │   └── analyze_job.py     Manual end-to-end demo script (Step 2)
 │   │   └── db/                    Engine/session, declarative Base
-│   ├── alembic/                   Migrations (Steps 1-6, applied in order)
+│   ├── alembic/                   Migrations (Steps 1-7, applied in order)
 │   ├── tests/                     pytest suite + tests/fixtures/ (local HTML, Step 5 only)
 │   ├── requirements.txt
 │   ├── pytest.ini
@@ -809,6 +943,7 @@ career-agent/
 │   ├── cover-letters-and-applications.md  Step 4: Ollama pipeline, validation, never-guess fields
 │   ├── browser-application-assistant.md   Step 5: safety model, field mapping, architecture
 │   ├── job-search-tracking.md     Step 6: schema, analytics formulas, design rationale
+│   ├── job-search-intelligence.md Step 7: priority/skill-gap formulas, confidence, LLM validation
 │   └── examples/                  Real generated example output for Steps 3-4
 └── README.md
 ```
@@ -817,11 +952,9 @@ career-agent/
 
 Platform-specific adapters (Greenhouse/Lever/Workday/...) beyond the
 generic HTML-form adapter -- `platform_detector.register_adapter()`
-already exists for this without needing to touch anything else. An
-AI interview-prep coach: `GET /applications/{id}/interview-context`
-(Step 6) already assembles everything such a step would need (job
-description, required/matched skills, CV version, projects/experience
-used, cover letter, notes) from data that already exists, with no new AI
-call of its own -- deliberately built as the exact handoff surface for
-it. External notifications (email/calendar/push) beyond the current
-read-only `GET /notifications/upcoming` / `GET /calendar/upcoming`.
+already exists for this without needing to touch anything else. External
+notifications (email/calendar/push) beyond the current read-only
+`GET /notifications/upcoming` / `GET /calendar/upcoming`. Recommendation
+feedback (accept/dismiss/complete) is stored but not yet used to actually
+tune future ranking -- `recommendation_engine.py` is the natural place a
+future step would add that.

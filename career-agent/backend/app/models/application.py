@@ -4,7 +4,7 @@ from sqlalchemy import ARRAY, JSON, Boolean, DateTime, Enum, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.models.enums import ApplicationPlatform, ApplicationStatus, PriorityLevel
+from app.models.enums import ApplicationPlatform, ApplicationStatus, PriorityLevel, RejectionReason
 from app.models.mixins import TimestampMixin, utcnow
 
 
@@ -64,6 +64,12 @@ class Application(Base, TimestampMixin):
     # section 22). Populated once, by tracking_service on confirmed
     # submission; never overwritten afterward.
     material_snapshot: Mapped[dict | None] = mapped_column(JSON)
+
+    # --- Step 7: user-recorded rejection reason ------------------------
+    # Only ever set by the user (spec section 20) -- never inferred by
+    # rejection_analyzer.py, which only reads this field, it never writes it.
+    rejection_reason: Mapped[RejectionReason | None] = mapped_column(Enum(RejectionReason, name="rejection_reason"))
+    rejection_reason_custom: Mapped[str | None] = mapped_column(String(500))
 
     job: Mapped["Job"] = relationship(back_populates="applications")
     cv_version: Mapped["CVVersion | None"] = relationship()

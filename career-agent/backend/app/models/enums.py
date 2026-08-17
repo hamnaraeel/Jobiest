@@ -370,3 +370,42 @@ class ApplicationNoteType(str, enum.Enum):
     FOLLOWUP = "followup"
     OFFER = "offer"
     REJECTION = "rejection"
+
+
+# --- Step 7: job-search intelligence, optimization, recommendations ---
+
+
+class RecommendationType(str, enum.Enum):
+    JOB_PRIORITY = "job_priority"
+    JOB_SKIP = "job_skip"
+    CV_IMPROVEMENT = "cv_improvement"
+    SKILL_GAP = "skill_gap"
+    FOLLOWUP = "followup"
+    INTERVIEW_PREPARATION = "interview_preparation"
+    APPLICATION_STRATEGY = "application_strategy"
+    SOURCE_STRATEGY = "source_strategy"
+    CAREER_DIRECTION = "career_direction"
+    REJECTION_PATTERN = "rejection_pattern"
+    GENERAL_INSIGHT = "general_insight"
+
+
+class RecommendationStatus(str, enum.Enum):
+    NEW = "new"
+    VIEWED = "viewed"
+    ACCEPTED = "accepted"
+    DISMISSED = "dismissed"
+    COMPLETED = "completed"
+    EXPIRED = "expired"
+
+
+class RejectionReason(str, enum.Enum):
+    NO_RESPONSE = "no_response"
+    INSUFFICIENT_EXPERIENCE = "insufficient_experience"
+    SKILLS_GAP = "skills_gap"
+    LOCATION = "location"
+    SALARY = "salary"
+    SPONSORSHIP = "sponsorship"
+    INTERNAL_CANDIDATE = "internal_candidate"
+    POSITION_CLOSED = "position_closed"
+    UNKNOWN = "unknown"
+    OTHER = "other"

@@ -1,14 +1,16 @@
-"""The full Step 1 -> Step 6 workflow, end to end, through the real API
-(spec section 75): Career Profile -> Job discovery/analysis/match ->
+"""The full Step 1 -> Step 7 workflow, end to end, through the real API
+(spec sections 64, 75): Career Profile -> Job discovery/analysis/match ->
 Tailored CV -> Cover letter + answers -> Browser-assisted application
 (real Playwright, local fixture, real submission with explicit approval)
--> Tracking (status history, interview, follow-up, dashboard).
+-> Tracking (status history, interview, follow-up, dashboard) ->
+Intelligence (priority/opportunity scoring, recommendations, weekly
+review, career strategy).
 
 AI calls (OpenAI for CV/matching-explanation, Ollama for cover letter/
-answers) are mocked, same as every other test in this suite -- nothing
-here depends on a real API key or a running Ollama instance. Step 5's
-browser automation is real Playwright against the local HTML fixture,
-never a real job site.
+answers/interview prep) are mocked, same as every other test in this
+suite -- nothing here depends on a real API key or a running Ollama
+instance. Step 5's browser automation is real Playwright against the
+local HTML fixture, never a real job site.
 """
 
 from app.ai.cv_structured_outputs import CVContentOutput, CVPlanOutput, ExperienceContentOutput, ProjectContentOutput, RewrittenBullet, SkillCategoryOutput
@@ -33,7 +35,7 @@ def _fake_openai_client(*parsed_in_order):
     return client
 
 
-def test_full_step_1_to_6_workflow(
+def test_full_step_1_to_7_workflow(
     client, rich_profile, db_session, make_analyzed_job, mocker, fake_ollama_client, fixture_url, allow_real_submit,
 ):
     profile = rich_profile["profile"]
@@ -177,3 +179,59 @@ def test_full_step_1_to_6_workflow(
     assert final_cv["status"] == "approved"
     assert final_cl["status"] == "approved"
     assert followup_resp.json()["due_date"] == "2026-08-22"
+
+    # --- Step 7: intelligence ---------------------------------------------
+    job_intel = client.get(f"/intelligence/jobs/{job.id}").json()
+    assert job_intel["priority"]["score"] >= 0
+    assert job_intel["opportunity"]["score"] >= 0
+    assert job_intel["priority"]["reasons"]
+    assert job_intel["priority"]["confidence_reason"]
+
+    app_intel = client.get(f"/intelligence/applications/{application_id}").json()
+    assert app_intel["quality"]["cv_approved"] is True
+    assert app_intel["quality"]["cover_letter_approved"] is True
+    assert app_intel["interview_preparation"]["company"] == "Example Company"
+
+    generate_resp = client.post("/intelligence/recommendations/generate")
+    assert generate_resp.status_code == 200
+    recs = generate_resp.json()["items"]
+    assert recs
+    for rec in recs:
+        assert rec["evidence"]
+        assert rec["confidence_reason"]
+        assert 0.0 <= rec["confidence"] <= 1.0
+
+    top_rec = recs[0]
+    accept_resp = client.post(f"/intelligence/recommendations/{top_rec['id']}/accept")
+    assert accept_resp.json()["status"] == "accepted"
+
+    weekly_review = client.get("/intelligence/weekly-review").json()
+    assert "recommendations" in weekly_review and weekly_review["recommendations"]
+    assert "evidence" in weekly_review
+
+    strategy = client.get("/intelligence/strategy").json()
+    assert "suggested_weekly_targets" in strategy
+
+    skill_gaps = client.get("/intelligence/skills/gaps").json()["gaps"]
+    top_gap = skill_gaps[0] if skill_gaps else None
+
+    cv_perf = client.get("/analytics/cv-versions").json()["cv_versions"]
+    best_cv = max(cv_perf, key=lambda label: cv_perf[label]["interviews"]) if cv_perf else None
+
+    source_perf = client.get("/intelligence/career").json()["recommended_sources"]
+
+    # --- Final summary, matching the shape of spec section 64's example ---
+    print("========================================")
+    print("AI JOB SEARCH INTELLIGENCE")
+    print("==========================")
+    print(f"Top Recommendation: {top_rec['title']}")
+    print(f"Confidence: {top_rec['confidence']}")
+    if top_gap:
+        print(f"Top Skill Gap: {top_gap['skill']} (priority: {top_gap['priority']})")
+    print(f"Best Observed CV: {best_cv}")
+    print(f"Best Source: {source_perf}")
+    print(f"Next Week: {weekly_review['recommendations'][0]}")
+    print("========================================")
+
+    assert top_rec["title"]
+    assert best_cv is not None
