@@ -844,6 +844,59 @@ regressing an already-shortlisted job's status back to `matched`, and
 status with `abandoned` (fixed by not calling `/cancel` after a
 successful submission -- see `docs/job-search-tracking.md`).
 
+## 9. Frontend
+
+A React dashboard covering Step 6 (analytics) and Step 7 (recommendations,
+job/application intelligence) -- built with Vite, TypeScript, Tailwind
+CSS, React Router, and Recharts. It never talks to any AI provider
+directly; it only calls this backend's REST API.
+
+```bash
+cd career-agent/frontend
+npm install
+npm run dev
+```
+
+Opens at `http://localhost:5173`. Run the backend separately
+(`uvicorn app.main:app --reload` from `career-agent/backend`, per section
+5) -- the Vite dev server proxies any `/api/*` request to
+`http://localhost:8000` (see `vite.config.ts`), so the frontend and
+backend are same-origin in dev and CORS never comes into play for the
+normal workflow. `CORSMiddleware` is still enabled on the backend
+(`frontend_origins` in `app/config.py`, defaulting to the Vite dev server
+ports) as a fallback for calling the API directly from the browser
+outside the proxy.
+
+> **Vite version note:** `npm create vite@latest` currently defaults to
+> an experimental Vite 8 build using the Rolldown bundler, which doesn't
+> ship a native binding for every platform/Node combination.
+> `package.json` pins the stable `vite@^6` / `@vitejs/plugin-react@^4`
+> toolchain instead -- if you regenerate `package.json` from scratch,
+> pin the same way rather than fighting the experimental bundler.
+
+Pages:
+
+- **Dashboard** (`/`) -- the Step 6 funnel, conversion rates, time-to-X
+  stats, and upcoming interviews/follow-ups/deadlines, all from
+  `GET /dashboard`.
+- **Recommendations** (`/recommendations`) -- the Step 7 recommendation
+  feed with type/priority/status filters, confidence bars, evidence
+  detail, and accept/dismiss/complete actions.
+- **Jobs** (`/jobs`, `/jobs/:id`) -- search/filter/sort over
+  `GET /jobs/search`, and a detail view with the Step 7 priority score,
+  opportunity score, requirement match breakdown, and CV recommendations
+  (`GET /intelligence/jobs/{id}`).
+- **Applications** (`/applications`, `/applications/:id`) -- search/
+  filter/sort, and a detail view with readiness checks, status updates,
+  timeline, interviews, offers, interview-prep context, and notes
+  (`GET /intelligence/applications/{id}` plus the Step 6 tracking
+  endpoints).
+
+`npm run build` produces a static production build in `dist/`; nothing
+currently serves it automatically (there's no reverse proxy or static
+file mount in the FastAPI app) -- `npm run dev` is the supported way to
+run the frontend today.
+
 ## Project structure
 
 ```
@@ -923,6 +976,16 @@ career-agent/
 │   ├── requirements.txt
 │   ├── pytest.ini
 │   └── .env.example
+├── frontend/
+│   ├── src/
+│   │   ├── main.tsx                Router setup (BrowserRouter + routes)
+│   │   ├── App.tsx                 Layout shell (sidebar nav + <Outlet />)
+│   │   ├── api/                    Typed client: client.ts, types.ts, one file per resource
+│   │   ├── hooks/useApi.ts         Fetch/loading/error/refetch hook
+│   │   ├── components/             Card, StatCard, Badge/StatusBadge, Button, ConfidenceBar, AsyncState
+│   │   └── pages/                  DashboardPage, RecommendationsPage, Jobs*Page, Applications*Page
+│   ├── vite.config.ts              Dev-server proxy: /api -> http://localhost:8000
+│   └── package.json
 ├── cv_templates/
 │   ├── ats/ml_engineer.tex        Default ATS-friendly CV LaTeX template
 │   ├── cover_letter/standard.tex  Default cover letter LaTeX template

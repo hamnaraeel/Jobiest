@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     default_followup_days: int = 7
     timezone: str = "UTC"
 
+    # Frontend (React/Vite dev server). Only used to configure CORS --
+    # the dev server itself proxies /api requests same-origin, so this
+    # mainly matters if you call the API directly from the browser (e.g.
+    # the built frontend served separately, or a different dev port).
+    frontend_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", case_sensitive=False)
 
 

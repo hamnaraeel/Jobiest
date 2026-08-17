@@ -1,8 +1,10 @@
 import logging
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 import app.models  # noqa: F401  (registers all models on Base.metadata)
+from app.config import get_settings
 
 # Structured logging for ingestion/parsing/AI calls/matching (see the
 # `logger = logging.getLogger("app....")` calls throughout app/services and
@@ -46,6 +48,18 @@ app = FastAPI(
         "explicit user approval."
     ),
     version="0.7.0",
+)
+
+# Local-first only: allows the local React dev server (and any other
+# configured local origin) to call this API directly. Never opened to
+# arbitrary origins -- FRONTEND_ORIGINS defaults to just the Vite dev
+# server ports and is fully configurable via .env.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_settings().frontend_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(profile.router)
