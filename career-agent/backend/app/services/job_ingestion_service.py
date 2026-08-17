@@ -9,6 +9,8 @@ import hashlib
 import logging
 import re
 from dataclasses import dataclass
+from datetime import date
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from sqlalchemy import select
@@ -17,6 +19,9 @@ from sqlalchemy.orm import Session
 from app.models.enums import JobStatus
 from app.models.job import Job
 from app.services.job_parser import clean_html_to_text, clean_pasted_description, fetch_job_url, normalize_url
+
+if TYPE_CHECKING:
+    from app.discovery.base import DiscoveredJob
 
 logger = logging.getLogger("app.job_ingestion")
 
@@ -55,6 +60,21 @@ def normalize_title(title: str | None) -> str:
 
 def normalize_company(company: str | None) -> str:
     return _normalize_identity_text(company)
+
+
+def _parse_posted_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def find_existing_job_by_external_id(db: Session, source: str, external_job_id: str) -> Job | None:
+    return db.execute(
+        select(Job).where(Job.source == source, Job.external_job_id == external_job_id)
+    ).scalar_one_or_none()
 
 
 def find_existing_job_by_url_or_text(db: Session, canonical_url: str | None, description_hash: str | None) -> Job | None:
@@ -147,3 +167,56 @@ def ingest_job(db: Session, url: str | None, description: str | None) -> Ingesti
     logger.info("job ingested id=%s has_description=%s", job.id, bool(job.description))
 
     return IngestionResult(job=job, created=True, fetch_notice=fetch_notice)
+
+
+def ingest_discovered_job(db: Session, discovered: "DiscoveredJob") -> IngestionResult:
+    """Stores a job found by Step 8's discovery adapters. Unlike
+    ingest_job() (Step 2, manual paste/URL), the source already told us
+    title/company/location/salary/etc directly -- no AI extraction is
+    needed just to know those; /jobs/{id}/analyze is still what extracts
+    structured *requirements* out of the description afterward.
+
+    Dedup checks external_job_id+source first (the adapters' own stable
+    identifier), then falls back to the same canonical_url/description_hash
+    check ingest_job() uses -- so a job discovered here that the user had
+    already pasted in manually (or vice versa) is still recognized as the
+    same job."""
+
+    canonical_url = normalize_url(discovered.url) if discovered.url else None
+    clean_description = clean_pasted_description(discovered.description) if discovered.description else None
+    description_hash = _hash_description(clean_description) if clean_description else None
+
+    existing = None
+    if discovered.external_job_id:
+        existing = find_existing_job_by_external_id(db, discovered.source, discovered.external_job_id)
+    if not existing:
+        existing = find_existing_job_by_url_or_text(db, canonical_url, description_hash)
+    if existing:
+        return IngestionResult(job=existing, created=False)
+
+    job = Job(
+        title=discovered.title or None,
+        company=discovered.company or None,
+        location=discovered.location,
+        employment_type=discovered.employment_type,
+        workplace_type=discovered.workplace_type,
+        url=discovered.url or None,
+        canonical_url=canonical_url,
+        description_hash=description_hash,
+        source=discovered.source,
+        external_job_id=discovered.external_job_id or None,
+        raw_content=discovered.description,
+        description=clean_description,
+        salary_min=discovered.salary_min,
+        salary_max=discovered.salary_max,
+        salary_currency=discovered.salary_currency,
+        posted_date=_parse_posted_date(discovered.posted_date),
+        extracted_at=None,
+        status=JobStatus.DISCOVERED,
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    logger.info("discovered job ingested id=%s source=%s", job.id, job.source)
+
+    return IngestionResult(job=job, created=True)

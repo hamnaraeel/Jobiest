@@ -1,10 +1,12 @@
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 import app.models  # noqa: F401  (registers all models on Base.metadata)
 from app.config import get_settings
+from app.scheduler import start_scheduler, stop_scheduler
 
 # Structured logging for ingestion/parsing/AI calls/matching (see the
 # `logger = logging.getLogger("app....")` calls throughout app/services and
@@ -21,6 +23,7 @@ from app.api import (
     browser_applications,
     certifications,
     cvs,
+    discovery,
     education,
     evidence,
     experience,
@@ -33,7 +36,19 @@ from app.api import (
     tracking,
 )
 
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # Step 8: only actually starts a background thread if
+    # DISCOVERY_SCHEDULER_ENABLED=true -- discovery itself always works
+    # on-demand via POST /discovery/run regardless of this setting.
+    start_scheduler()
+    yield
+    stop_scheduler()
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="Career Agent",
     description=(
         "Single source of truth for verified career facts, job ingestion/analysis/"
@@ -47,7 +62,7 @@ app = FastAPI(
         "input rather than guessed, and no submit button is ever clicked without "
         "explicit user approval."
     ),
-    version="0.7.0",
+    version="0.8.0",
 )
 
 # Local-first only: allows the local React dev server (and any other
@@ -101,6 +116,8 @@ app.include_router(browser_applications.applications_router)
 app.include_router(intelligence.intelligence_router)
 app.include_router(intelligence.interview_prep_router)
 app.include_router(intelligence.applications_rejection_router)
+
+app.include_router(discovery.router)
 
 
 @app.get("/health", tags=["health"])

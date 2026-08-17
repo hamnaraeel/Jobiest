@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import './index.css'
 import App from './App.tsx'
 import DashboardPage from './pages/DashboardPage.tsx'
+import DiscoveryPage from './pages/DiscoveryPage.tsx'
 import RecommendationsPage from './pages/RecommendationsPage.tsx'
 import JobsPage from './pages/JobsPage.tsx'
 import JobDetailPage from './pages/JobDetailPage.tsx'
@@ -16,6 +17,7 @@ createRoot(document.getElementById('root')!).render(
       <Routes>
         <Route element={<App />}>
           <Route index element={<DashboardPage />} />
+          <Route path="discovery" element={<DiscoveryPage />} />
           <Route path="recommendations" element={<RecommendationsPage />} />
           <Route path="jobs" element={<JobsPage />} />
           <Route path="jobs/:jobId" element={<JobDetailPage />} />

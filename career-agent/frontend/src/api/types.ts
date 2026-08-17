@@ -266,6 +266,43 @@ export interface RecommendationListResponse {
   total: number
 }
 
+// --- Discovery (Step 8) ---------------------------------------------------
+
+export type DiscoveryTrigger = 'manual' | 'scheduled'
+
+export interface DiscoverySourceResult {
+  found: number
+  created: number
+  duplicate: number
+  error: Nullable<string>
+  note?: string
+}
+
+export interface DiscoveryRunRead {
+  id: number
+  trigger: DiscoveryTrigger
+  sources: string[]
+  query: { keywords: string[]; locations: string[]; companies: string[] }
+  results: Record<string, DiscoverySourceResult>
+  jobs_found: number
+  jobs_created: number
+  started_at: string
+  finished_at: Nullable<string>
+  created_at: string
+}
+
+export interface DiscoveryRunListResponse {
+  items: DiscoveryRunRead[]
+  total: number
+}
+
+export interface DiscoverySourceStatus {
+  source: string
+  configured: boolean
+  requires_api_key: boolean
+  note: string
+}
+
 // --- Intelligence --------------------------------------------------------
 
 export interface PriorityScoreResponse {

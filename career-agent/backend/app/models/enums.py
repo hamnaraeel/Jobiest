@@ -398,6 +398,27 @@ class RecommendationStatus(str, enum.Enum):
     EXPIRED = "expired"
 
 
+# --- Step 8: job discovery ---
+
+
+class DiscoverySource(str, enum.Enum):
+    """LinkedIn and Indeed are deliberately absent -- both prohibit
+    automated access in their ToS and run active anti-bot enforcement.
+    Those stay a manual paste/URL flow through Step 2's ingest_job."""
+
+    GREENHOUSE = "greenhouse"
+    LEVER = "lever"
+    REMOTEOK = "remoteok"
+    WEWORKREMOTELY = "weworkremotely"
+    ADZUNA = "adzuna"
+    USAJOBS = "usajobs"
+
+
+class DiscoveryTrigger(str, enum.Enum):
+    MANUAL = "manual"
+    SCHEDULED = "scheduled"
+
+
 class RejectionReason(str, enum.Enum):
     NO_RESPONSE = "no_response"
     INSUFFICIENT_EXPERIENCE = "insufficient_experience"

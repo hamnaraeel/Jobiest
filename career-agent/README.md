@@ -47,6 +47,19 @@ An AI-powered job application agent, built step by step.
   verified Career Profile. See
   [`docs/job-search-intelligence.md`](docs/job-search-intelligence.md).
 
+- **Step 8 — Job Discovery**: searches public, ToS-compliant job sources
+  (Greenhouse and Lever company boards, RemoteOK, We Work Remotely,
+  Adzuna, USAJobs) using your target roles/locations/companies, and
+  stores new matches through the same dedup-aware path as a manually
+  pasted-in job. Deliberately does **not** scrape LinkedIn or Indeed --
+  both explicitly prohibit automated access in their ToS and run active
+  anti-bot enforcement (LinkedIn has litigated and won against scrapers
+  before). Those two stay a manual paste/URL flow, same as Step 2. Runs
+  on-demand (`POST /discovery/run`) or on an optional background
+  interval (`DISCOVERY_SCHEDULER_ENABLED=true`), never both silently --
+  discovery only ever runs when you ask it to, or when you've explicitly
+  opted into the scheduler.
+
 This is an assisted workflow, not an autonomous agent -- nothing is ever
 submitted, or changed in your Career Profile, without a human deciding
 to do so first.
@@ -155,6 +168,15 @@ FIELD_CONFIDENCE_HIGH=0.90
 FIELD_CONFIDENCE_MEDIUM=0.70
 DEFAULT_FOLLOWUP_DAYS=7
 TIMEZONE=UTC
+DISCOVERY_ENABLED_SOURCES=["greenhouse","lever","remoteok","weworkremotely","adzuna","usajobs"]
+DISCOVERY_MAX_RESULTS_PER_SOURCE=25
+ADZUNA_APP_ID=
+ADZUNA_APP_KEY=
+ADZUNA_COUNTRY=us
+USAJOBS_API_KEY=
+USAJOBS_USER_AGENT_EMAIL=
+DISCOVERY_SCHEDULER_ENABLED=false
+DISCOVERY_SCHEDULER_INTERVAL_HOURS=24
 ```
 
 `OPENAI_API_KEY` powers job analysis and CV planning/content generation
@@ -177,7 +199,18 @@ not on `PATH`; `COVER_LETTER_MIN_WORDS`/`MAX_WORDS` set the target length
 range (`length: "short"|"medium"|"long"` in the generate request nudges
 within/around that range). `DEFAULT_FOLLOWUP_DAYS` (Step 6) is only used
 to compute a *suggested* follow-up date -- nothing is scheduled or sent
-automatically.
+automatically. `DISCOVERY_ENABLED_SOURCES` (Step 8) controls which
+sources `POST /discovery/run` searches by default (a request can still
+override it with its own `sources` list); Greenhouse/Lever/RemoteOK/We
+Work Remotely need no key, so leaving `ADZUNA_APP_ID`/`ADZUNA_APP_KEY`
+or `USAJOBS_API_KEY`/`USAJOBS_USER_AGENT_EMAIL` blank just means those
+two sources report a configuration error in the run's results rather
+than searching -- register free keys at
+[developer.adzuna.com](https://developer.adzuna.com/) and
+[developer.usajobs.gov](https://developer.usajobs.gov/) to enable them.
+`DISCOVERY_SCHEDULER_ENABLED` is a separate opt-in for running discovery
+automatically on `DISCOVERY_SCHEDULER_INTERVAL_HOURS` -- discovery
+always works on-demand regardless of this setting.
 
 ## 4. Database migration
 
@@ -779,6 +812,66 @@ See `docs/job-search-intelligence.md` for the priority-score formula,
 skill-gap ranking formula, confidence system, and exactly how LLM output
 is validated before it's ever shown to you.
 
+## 7h. Step 8: job discovery
+
+Discovery searches use your target roles/locations (career profile or
+job-search goal, goal takes priority if set) and, for Greenhouse/Lever,
+your goal's `target_companies` as board tokens -- set those first if you
+want those two sources to find anything:
+
+```bash
+curl -X PUT http://localhost:8000/intelligence/goals \
+  -H "Content-Type: application/json" \
+  -d '{"target_roles": ["Machine Learning Engineer"], "target_locations": ["Remote"], "target_companies": ["stripe", "airbnb"]}'
+```
+
+Run discovery now, across every configured source:
+
+```bash
+curl -X POST http://localhost:8000/discovery/run | python3 -m json.tool
+```
+
+Override the query for a single run without touching the stored goal, or
+search only specific sources:
+
+```bash
+curl -X POST http://localhost:8000/discovery/run \
+  -H "Content-Type: application/json" \
+  -d '{"sources": ["remoteok", "weworkremotely"], "keywords": ["Computer Vision Engineer"], "locations": ["Remote"]}'
+```
+
+Every run is logged, with a per-source breakdown (found/created/
+duplicate/error) -- a source erroring (e.g. Adzuna without a key
+configured) never stops the others from running:
+
+```json
+{
+  "id": 1, "trigger": "manual", "jobs_found": 50, "jobs_created": 50,
+  "results": {
+    "greenhouse": {"found": 0, "created": 0, "duplicate": 0, "error": null, "note": "No target companies configured..."},
+    "remoteok": {"found": 25, "created": 25, "duplicate": 0, "error": null},
+    "adzuna": {"found": 0, "created": 0, "duplicate": 0, "error": "Adzuna is not configured -- set ADZUNA_APP_ID and ADZUNA_APP_KEY."}
+  }
+}
+```
+
+Review run history, and what each source needs to be usable:
+
+```bash
+curl http://localhost:8000/discovery/runs
+curl http://localhost:8000/discovery/runs/1
+curl http://localhost:8000/discovery/sources
+```
+
+Jobs found this way land as ordinary `discovered`-status Job rows --
+`POST /jobs/{id}/analyze` and `POST /jobs/{id}/match` (Step 2) work on
+them exactly as they do on a manually pasted-in job, since discovery
+already filled in title/company/location/salary/etc directly from the
+source (no AI extraction needed just to know those).
+
+Full Step 8 endpoint list: `POST /discovery/run`, `GET /discovery/runs`,
+`GET /discovery/runs/{id}`, `GET /discovery/sources`.
+
 ## 8. Testing
 
 Tests run against a real PostgreSQL database (with pgvector) — point
@@ -844,6 +937,17 @@ regressing an already-shortlisted job's status back to `matched`, and
 status with `abandoned` (fixed by not calling `/cancel` after a
 successful submission -- see `docs/job-search-tracking.md`).
 
+`tests/test_discovery.py` covers Step 8: each source adapter's parsing
+against realistic mocked HTTP responses (never real network calls) --
+including Greenhouse/Lever's 404-means-not-on-this-ATS handling, Adzuna/
+USAJobs raising a clear configuration error when their keys aren't set,
+and RemoteOK's feed's own legal-notice first element being skipped
+correctly -- the dedup-aware ingest path (by external id, then by
+canonical URL/description hash, matching an already-known job even
+across sources), orchestration's per-source error isolation (one source
+failing never blocks the others), goal-over-profile query precedence,
+and the API endpoints.
+
 ## 9. Frontend
 
 A React dashboard covering Step 6 (analytics) and Step 7 (recommendations,
@@ -879,6 +983,9 @@ Pages:
 - **Dashboard** (`/`) -- the Step 6 funnel, conversion rates, time-to-X
   stats, and upcoming interviews/follow-ups/deadlines, all from
   `GET /dashboard`.
+- **Discovery** (`/discovery`) -- the Step 8 job discovery run trigger,
+  per-source status/configuration, and run history with a per-source
+  found/created/duplicate/error breakdown.
 - **Recommendations** (`/recommendations`) -- the Step 7 recommendation
   feed with type/priority/status filters, confidence bars, evidence
   detail, and accept/dismiss/complete actions.
@@ -932,7 +1039,8 @@ career-agent/
 │   │   │   ├── analytics_service.py       Step 6: funnel, conversion rates, all analytics (SQL/Python only)
 │   │   │   ├── export_service.py          Step 6: CSV/JSON application export
 │   │   │   ├── recommendation_engine.py   Step 7: the only writer of Recommendation rows
-│   │   │   └── goal_service.py            Step 7: UserJobSearchGoal CRUD + progress comparison
+│   │   │   ├── goal_service.py            Step 7: UserJobSearchGoal CRUD + progress comparison
+│   │   │   └── discovery_service.py       Step 8: builds the search query, runs each source, logs a DiscoveryRun
 │   │   ├── cli.py                         Step 6: `python -m app.cli backup`
 │   │   ├── intelligence/                  Step 7: deterministic analyzers (no LLM except explainer/interview_analyzer)
 │   │   │   ├── confidence.py              Small-sample-protected confidence scoring
@@ -944,6 +1052,15 @@ career-agent/
 │   │   │   ├── application_analyzer.py    Per-job/per-application intelligence assembly
 │   │   │   ├── interview_analyzer.py      Interview prep context/output + question/answer generation
 │   │   │   └── recommendation_explainer.py  LLM explanation layer + output validation
+│   │   ├── discovery/                     Step 8: one adapter per public job source, no LLM involved
+│   │   │   ├── base.py                    DiscoveredJob/DiscoveryQuery + DiscoverySourceError
+│   │   │   ├── matching.py                Keyword matching + Greenhouse/Lever board-token guessing
+│   │   │   ├── greenhouse.py              Per-company board API (no key)
+│   │   │   ├── lever.py                   Per-company board API (no key)
+│   │   │   ├── remoteok.py                Global feed API (no key)
+│   │   │   ├── weworkremotely.py          Global RSS feed (no key)
+│   │   │   ├── adzuna.py                  Keyword+location search API (free key)
+│   │   │   └── usajobs.py                 Keyword+location search API (free key)
 │   │   ├── browser/                       Step 5: Playwright mechanics
 │   │   │   ├── browser_manager.py         Session lifecycle (persistent Chromium context)
 │   │   │   ├── page_analyzer.py           CAPTCHA / login-required detection
@@ -971,7 +1088,7 @@ career-agent/
 │   │   ├── scripts/
 │   │   │   └── analyze_job.py     Manual end-to-end demo script (Step 2)
 │   │   └── db/                    Engine/session, declarative Base
-│   ├── alembic/                   Migrations (Steps 1-7, applied in order)
+│   ├── alembic/                   Migrations (Steps 1-8, applied in order)
 │   ├── tests/                     pytest suite + tests/fixtures/ (local HTML, Step 5 only)
 │   ├── requirements.txt
 │   ├── pytest.ini
@@ -983,7 +1100,7 @@ career-agent/
 │   │   ├── api/                    Typed client: client.ts, types.ts, one file per resource
 │   │   ├── hooks/useApi.ts         Fetch/loading/error/refetch hook
 │   │   ├── components/             Card, StatCard, Badge/StatusBadge, Button, ConfidenceBar, AsyncState
-│   │   └── pages/                  DashboardPage, RecommendationsPage, Jobs*Page, Applications*Page
+│   │   └── pages/                  DashboardPage, DiscoveryPage, RecommendationsPage, Jobs*Page, Applications*Page
 │   ├── vite.config.ts              Dev-server proxy: /api -> http://localhost:8000
 │   └── package.json
 ├── cv_templates/
@@ -1020,4 +1137,9 @@ notifications (email/calendar/push) beyond the current read-only
 `GET /notifications/upcoming` / `GET /calendar/upcoming`. Recommendation
 feedback (accept/dismiss/complete) is stored but not yet used to actually
 tune future ranking -- `recommendation_engine.py` is the natural place a
-future step would add that.
+future step would add that. LinkedIn and Indeed are deliberately never
+scraped by Step 8 (see `app/discovery/base.py`) -- jobs from either stay
+a manual paste/URL flow through Step 2. Greenhouse/Lever discovery only
+searches companies you've explicitly listed in your job-search goal's
+`target_companies` -- there's no cross-company search API for either, by
+design on their end, not a gap in this implementation.

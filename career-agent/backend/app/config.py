@@ -43,6 +43,24 @@ class Settings(BaseSettings):
     default_followup_days: int = 7
     timezone: str = "UTC"
 
+    # Step 8: job discovery. Greenhouse/Lever/RemoteOK/WWR need no key at
+    # all; Adzuna and USAJobs are free but keyed -- leave their keys blank
+    # to simply skip those two sources (reported, not a hard failure).
+    # LinkedIn/Indeed are deliberately absent: both prohibit automated
+    # scraping in their ToS, so they stay a manual paste/URL flow (Step 2).
+    discovery_enabled_sources: list[str] = ["greenhouse", "lever", "remoteok", "weworkremotely", "adzuna", "usajobs"]
+    discovery_max_results_per_source: int = 25
+    adzuna_app_id: str = ""
+    adzuna_app_key: str = ""
+    adzuna_country: str = "us"
+    usajobs_api_key: str = ""
+    usajobs_user_agent_email: str = ""
+    # Background scheduled discovery runs, in addition to on-demand
+    # POST /discovery/run calls. Disabled by default -- discovery only
+    # ever runs when you explicitly ask it to, until you opt in here.
+    discovery_scheduler_enabled: bool = False
+    discovery_scheduler_interval_hours: int = 24
+
     # Frontend (React/Vite dev server). Only used to configure CORS --
     # the dev server itself proxies /api requests same-origin, so this
     # mainly matters if you call the API directly from the browser (e.g.
