@@ -63,6 +63,25 @@ def validate_tool_call(tool_name: str, arguments: dict, registry: dict) -> objec
         raise ToolValidationError(f"Invalid arguments for tool '{tool_name}': {exc}") from exc
 
 
+def validate_plan_tools_exist(steps: list[dict], registry: dict) -> list[str]:
+    """Cheap pre-flight check (spec section 31) run at plan-creation
+    time, before any step executes: every referenced tool must exist.
+    Deliberately does NOT validate full argument sets here -- some
+    arguments are `$PREV_...` placeholders (executor.py) only resolved
+    to real values once an earlier step has actually run; validate_plan()
+    below does the full check, but only makes sense once placeholders
+    are already resolved."""
+
+    problems = []
+    for i, step in enumerate(steps):
+        tool_name = step.get("tool")
+        if not tool_name:
+            problems.append(f"Step {i + 1} ({step.get('action', '?')}) has no tool.")
+        elif tool_name not in registry:
+            problems.append(f"Step {i + 1} ({step.get('action', tool_name)}): unknown tool '{tool_name}'.")
+    return problems
+
+
 def validate_plan(steps: list[dict], registry: dict) -> list[str]:
     """Checks every step's tool exists and its arguments parse, before
     any step actually executes (spec section 31). Returns a list of

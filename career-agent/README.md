@@ -10,6 +10,18 @@ An AI-powered job application agent, built step by step.
 - **Step 2 — Job Ingestion, Analysis & Matching**: paste a job URL or
   description in, get a deterministic, explainable fit score out. See
   [`docs/job-matching-schema.md`](docs/job-matching-schema.md).
+- **Step 2b — Job Discovery**: searches public, ToS-compliant job sources
+  (Greenhouse and Lever company boards, RemoteOK, We Work Remotely,
+  Adzuna, USAJobs) using your target roles/locations/companies, and
+  stores new matches through the same dedup-aware path as a manually
+  pasted-in job. Deliberately does **not** scrape LinkedIn or Indeed --
+  both explicitly prohibit automated access in their ToS and run active
+  anti-bot enforcement (LinkedIn has litigated and won against scrapers
+  before). Those two stay a manual paste/URL flow, same as Step 2. Runs
+  on-demand (`POST /discovery/run`) or on an optional background
+  interval (`DISCOVERY_SCHEDULER_ENABLED=true`), never both silently --
+  discovery only ever runs when you ask it to, or when you've explicitly
+  opted into the scheduler.
 - **Step 3 — CV Customization, Versioning & PDF Generation**: generate a
   job-tailored CV where every bullet traces back to a real, verified
   profile row, validated deterministically before it's ever rendered to
@@ -46,19 +58,14 @@ An AI-powered job application agent, built step by step.
   generate interview prep questions/draft answers grounded only in your
   verified Career Profile. See
   [`docs/job-search-intelligence.md`](docs/job-search-intelligence.md).
-
-- **Step 8 — Job Discovery**: searches public, ToS-compliant job sources
-  (Greenhouse and Lever company boards, RemoteOK, We Work Remotely,
-  Adzuna, USAJobs) using your target roles/locations/companies, and
-  stores new matches through the same dedup-aware path as a manually
-  pasted-in job. Deliberately does **not** scrape LinkedIn or Indeed --
-  both explicitly prohibit automated access in their ToS and run active
-  anti-bot enforcement (LinkedIn has litigated and won against scrapers
-  before). Those two stay a manual paste/URL flow, same as Step 2. Runs
-  on-demand (`POST /discovery/run`) or on an optional background
-  interval (`DISCOVERY_SCHEDULER_ENABLED=true`), never both silently --
-  discovery only ever runs when you ask it to, or when you've explicitly
-  opted into the scheduler.
+- **Step 8 — AI Job Search Agent / Orchestrator**: connects everything
+  above into one controllable agent -- give it a high-level goal
+  ("Find 10 ML Engineer jobs in Islamabad or remote", "Prepare the top
+  3 applications") and it plans and executes the right sequence of the
+  *existing* tools above to get there. It never reimplements Steps 1-7,
+  never submits an application or sends an external message without
+  your explicit approval, and stops cleanly (never runs away) at every
+  point a real decision is needed. See the "Step 8" section below.
 
 This is an assisted workflow, not an autonomous agent -- nothing is ever
 submitted, or changed in your Career Profile, without a human deciding
@@ -177,6 +184,14 @@ USAJOBS_API_KEY=
 USAJOBS_USER_AGENT_EMAIL=
 DISCOVERY_SCHEDULER_ENABLED=false
 DISCOVERY_SCHEDULER_INTERVAL_HOURS=24
+AGENT_ENABLED=true
+MAX_AGENT_STEPS=20
+MAX_AGENT_RETRIES=2
+AUTO_GENERATE_MATERIALS=true
+AUTO_PREPARE_APPLICATIONS=true
+AUTO_SUBMIT_APPLICATIONS=false
+AUTO_SEND_MESSAGES=false
+REQUIRE_APPROVAL_FOR_EXTERNAL_ACTIONS=true
 ```
 
 `OPENAI_API_KEY` powers job analysis and CV planning/content generation
@@ -199,7 +214,7 @@ not on `PATH`; `COVER_LETTER_MIN_WORDS`/`MAX_WORDS` set the target length
 range (`length: "short"|"medium"|"long"` in the generate request nudges
 within/around that range). `DEFAULT_FOLLOWUP_DAYS` (Step 6) is only used
 to compute a *suggested* follow-up date -- nothing is scheduled or sent
-automatically. `DISCOVERY_ENABLED_SOURCES` (Step 8) controls which
+automatically. `DISCOVERY_ENABLED_SOURCES` (Step 2b) controls which
 sources `POST /discovery/run` searches by default (a request can still
 override it with its own `sources` list); Greenhouse/Lever/RemoteOK/We
 Work Remotely need no key, so leaving `ADZUNA_APP_ID`/`ADZUNA_APP_KEY`
@@ -210,7 +225,19 @@ than searching -- register free keys at
 [developer.usajobs.gov](https://developer.usajobs.gov/) to enable them.
 `DISCOVERY_SCHEDULER_ENABLED` is a separate opt-in for running discovery
 automatically on `DISCOVERY_SCHEDULER_INTERVAL_HOURS` -- discovery
-always works on-demand regardless of this setting.
+always works on-demand regardless of this setting. `MAX_AGENT_STEPS`
+(Step 8) is how many plan steps a single `POST /agent/chat` or
+`/resume` call executes before pausing (never failing) so it can be
+resumed; `MAX_AGENT_RETRIES` limits retries of a *failed* step and never
+applies to `application.submit`/`application.approve_submission`
+regardless of its value. The `AUTO_*`/`REQUIRE_APPROVAL_FOR_EXTERNAL_
+ACTIONS` flags describe the agent's conservative default posture
+(materials generation and application prep run on their own; submission
+and external messages never do) rather than being read directly by
+individual tools -- the actual, non-overridable gate is
+`permissions.py`'s risk policy, reusing Step 5's own `DRY_RUN` as the
+hard stop underneath `application.submit` rather than adding a second
+one.
 
 ## 4. Database migration
 
@@ -812,7 +839,7 @@ See `docs/job-search-intelligence.md` for the priority-score formula,
 skill-gap ranking formula, confidence system, and exactly how LLM output
 is validated before it's ever shown to you.
 
-## 7h. Step 8: job discovery
+## 7h. Step 2b: job discovery
 
 Discovery searches use your target roles/locations (career profile or
 job-search goal, goal takes priority if set) and, for Greenhouse/Lever,
@@ -869,7 +896,7 @@ them exactly as they do on a manually pasted-in job, since discovery
 already filled in title/company/location/salary/etc directly from the
 source (no AI extraction needed just to know those).
 
-Full Step 8 endpoint list: `POST /discovery/run`, `GET /discovery/runs`,
+Full Step 2b endpoint list: `POST /discovery/run`, `GET /discovery/runs`,
 `GET /discovery/runs/{id}`, `GET /discovery/sources`.
 
 ### Running persistently on macOS (survives reboots)
@@ -915,6 +942,212 @@ Notes:
 - Once loaded, this owns port 8000. Don't also run a manual
   `uvicorn --port 8000` alongside it -- use a different port for that if
   you need a separate hot-reloading instance while developing.
+
+## 7i. Step 8: AI job search agent / orchestrator
+
+Give it one high-level request instead of calling Steps 1-7's endpoints
+yourself, one at a time:
+
+```bash
+curl -X POST http://localhost:8000/agent/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Find 5 strong ML Engineer jobs"}' | python3 -m json.tool
+```
+
+```json
+{
+  "id": 1, "status": "completed",
+  "objective": "Find and rank jobs matching the request.",
+  "final_result": {
+    "completed": ["search_jobs", "rank_jobs"],
+    "job_ids": [12, 8, 41, 3, 19],
+    "summary": "OBJECTIVE: Find and rank jobs matching the request.\n\nCOMPLETED:\n  ✓ search_jobs\n  ✓ rank_jobs\n\nAPPROVAL REQUIRED:\n  (none)"
+  }
+}
+```
+
+A request that implies real, persistent actions (preparing applications)
+still runs on its own -- generating a CV/cover letter and creating an
+`Application` row aren't submission, so nothing stops it:
+
+```bash
+curl -X POST http://localhost:8000/agent/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Find 3 strong ML jobs and prepare applications"}'
+```
+
+But anything that leaves this machine -- an actual submit click, an
+external message -- always stops and waits, no matter what:
+
+```bash
+curl -X POST http://localhost:8000/agent/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Submit application 42"}'
+# {"status": "waiting_for_approval", ...}
+
+curl http://localhost:8000/agent/tasks/2/approvals
+# [{"id": 7, "status": "pending", "description": "Approve: submit_1 (application.submit)", ...}]
+
+curl -X POST http://localhost:8000/agent/approvals/7/approve
+# approving immediately resumes the task -- no separate /resume call needed
+```
+
+Rejecting instead just skips that step and the task still completes
+cleanly (spec-equivalent: "continue only with what was approved"):
+
+```bash
+curl -X POST http://localhost:8000/agent/approvals/7/reject
+```
+
+A follow-up like "prepare the top 3" resolves against an earlier task's
+own result -- never guessed, always an explicit reference you provide:
+
+```bash
+curl -X POST http://localhost:8000/agent/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Prepare the top 3", "previous_task_id": 1}'
+```
+
+Inspect or control a task at any point:
+
+```bash
+curl http://localhost:8000/agent/tasks/1                # status, objective, final_result
+curl http://localhost:8000/agent/tasks/1/plan            # every step, in order, with its result
+curl http://localhost:8000/agent/tasks/1/events          # the full execution log
+curl -X POST http://localhost:8000/agent/tasks/1/pause
+curl -X POST http://localhost:8000/agent/tasks/1/resume
+curl -X POST http://localhost:8000/agent/tasks/1/cancel  # also closes any browser session it opened
+curl http://localhost:8000/agent/usage                   # tool-call counts, execution time, LLM-planning calls
+```
+
+Or from the command line -- every subcommand runs through the exact same
+`handle_chat_message()` path as `POST /agent/chat`, so the CLI and API
+can never drift apart:
+
+```bash
+python -m app.agent search           # "Find jobs matching my profile"
+python -m app.agent prepare          # "Prepare the top 5 applications"
+python -m app.agent review           # "Review my applications"
+python -m app.agent weekly-review
+python -m app.agent status
+python -m app.agent interview --application-id 42
+```
+
+### Architecture
+
+```
+User request
+  -> Intent detection (deterministic regex first; local Ollama only for
+     genuinely ambiguous phrasing, and only to CLASSIFY into one of a
+     fixed set of known intents + extract a count/location/id -- never
+     to write a tool name or argument itself)
+  -> Planning (hand-written templates turn the intent into an ordered
+     AgentPlanStep list, one real tool call per step)
+  -> Execution, one step at a time (app/agent/executor.py)
+       -> requires_approval? create an AgentApproval, stop cleanly
+       -> otherwise: validate arguments against the tool's schema,
+          call its handler (a thin wrapper over an existing Steps-1-7
+          service/router function), log the result
+       -> MAX_AGENT_STEPS reached? pause cleanly, resumable later
+  -> Final structured result (OBJECTIVE / COMPLETED / PENDING /
+     APPROVAL REQUIRED / WARNINGS) stored on the task
+```
+
+`backend/app/agent/`:
+
+- **tool_registry.py** / **tools/*.py** -- ~44 tools, one thin wrapper
+  per Steps-1-7 capability (`jobs.search`, `cv.generate`,
+  `application.submit`, `intelligence.recommendations`, ...). Each
+  declares a pydantic input schema, a permission (`read_only` / `write`
+  / `external_action`), and a risk level (`low` / `medium` / `high`).
+  A handful are genuinely new *composition* (not reimplementation):
+  `jobs.rank` analyzes+matches+ranks a batch of jobs by calling the same
+  functions `jobs.analyze`/`jobs.match` do, in a loop; `application.
+  prepare_batch` does the same for generating materials + creating
+  applications across several jobs in one call, since the job count
+  isn't known until the search/rank step actually runs.
+- **tool_router.py** -- the only path from a plan step to a real
+  service call: validates arguments against the tool's schema, invokes
+  it, normalizes the result into `{success, data, warnings, errors}`.
+- **planner.py** -- deterministic intent regexes covering every example
+  command in the spec this step was built from, a local-LLM fallback for
+  ambiguous phrasing (classification only, see `prompts.py`), and one
+  hand-written plan-template function per intent.
+- **executor.py** -- the controlled loop: `$PREV_JOB_IDS`/
+  `$PREV_RANKED_JOB_IDS` placeholder resolution between steps, approval
+  gating, `MAX_AGENT_STEPS`, limited retries (never for
+  `application.submit`/`application.approve_submission` -- spec: never
+  blindly retry an irreversible action), and the final structured-result
+  builder.
+- **permissions.py** -- the approval policy: LOW always auto-runs,
+  MEDIUM auto-runs unless the tool is in `ALWAYS_REQUIRES_APPROVAL`
+  (submission, external messages, profile/goal changes, offer
+  acceptance), HIGH always requires approval with no override -- a
+  plan step's own `requires_approval` flag can only strengthen this,
+  never weaken it.
+- **approval_manager.py** -- the approval lifecycle (request / approve /
+  reject / expire); nothing except an explicit
+  `POST /agent/approvals/{id}/approve|reject` ever changes an approval's
+  status -- conversational text like "okay" or "looks good" is never
+  interpreted as consent.
+- **task_manager.py** -- the DB access layer for `AgentTask`/
+  `AgentPlanStep`/`AgentEvent`/`AgentApproval` (append-only event log,
+  like Step 5's `ApplicationEvent`).
+- **memory.py** -- resolves conversational follow-ups ("the top 3")
+  against a previous task's own stored result; never a second copy of
+  the Career Profile or of conversation history (spec: don't duplicate
+  what Steps 1-7 already store).
+- **validators.py** -- pre-flight plan validation (every referenced
+  tool must exist) and `wrap_untrusted_text()`, which marks external
+  content (job descriptions, scraped pages) as DATA before it reaches
+  an LLM prompt and flags obvious injection phrasing inline. The real
+  guarantee against prompt injection is structural, not textual: the
+  LLM can only ever *name* one of the ~44 registered tools, and every
+  argument is schema-validated before a handler runs -- there is no
+  code path from "text an LLM produced" to executing arbitrary code, a
+  shell command, or an unregistered action.
+- **agent.py** -- ties the above together: `handle_chat_message()`
+  (creates + plans + runs a task), `resume_task()`, `pause_task()`,
+  `cancel_task()` (which also closes any browser session the task
+  opened, rather than leaving it running).
+
+### Configuration
+
+```
+AGENT_ENABLED=true
+MAX_AGENT_STEPS=20
+MAX_AGENT_RETRIES=2
+AUTO_GENERATE_MATERIALS=true
+AUTO_PREPARE_APPLICATIONS=true
+AUTO_SUBMIT_APPLICATIONS=false
+AUTO_SEND_MESSAGES=false
+REQUIRE_APPROVAL_FOR_EXTERNAL_ACTIONS=true
+```
+
+There's no separate `AGENT_DRY_RUN` -- `application.submit` reuses
+Step 5's existing `DRY_RUN` flag (and its `submission_guard` check)
+rather than introducing a second identical setting; the agent's own
+approval gate sits in *front* of that check, it doesn't replace it. Two
+independent things both have to agree before a real click ever happens.
+
+### What's intentionally not here
+
+Streaming (`POST /agent/chat/stream`) and real connectors
+(email/calendar/LinkedIn/job-board outreach) are both explicitly
+optional in the spec this step was built from, and aren't implemented --
+streaming would complicate the architecture for little benefit at this
+scale, and connectors need a real integration target before an
+interface is worth committing to. Nothing here ever mass-messages
+recruiters, mass-applies without review, or bypasses an application
+limit -- there is no tool that sends an external message at all yet.
+
+Full Step 8 endpoint list: `POST /agent/chat`, `GET /agent/tasks`,
+`GET /agent/tasks/{id}`, `POST /agent/tasks/{id}/pause`,
+`POST /agent/tasks/{id}/resume`, `POST /agent/tasks/{id}/cancel`,
+`GET /agent/tasks/{id}/plan`, `GET /agent/tasks/{id}/events`,
+`GET /agent/tasks/{id}/approvals`,
+`POST /agent/approvals/{id}/approve`,
+`POST /agent/approvals/{id}/reject`, `GET /agent/usage`.
 
 ## 8. Testing
 
@@ -981,7 +1214,7 @@ regressing an already-shortlisted job's status back to `matched`, and
 status with `abandoned` (fixed by not calling `/cancel` after a
 successful submission -- see `docs/job-search-tracking.md`).
 
-`tests/test_discovery.py` covers Step 8: each source adapter's parsing
+`tests/test_discovery.py` covers Step 2b: each source adapter's parsing
 against realistic mocked HTTP responses (never real network calls) --
 including Greenhouse/Lever's 404-means-not-on-this-ATS handling, Adzuna/
 USAJobs raising a clear configuration error when their keys aren't set,
@@ -991,6 +1224,24 @@ canonical URL/description hash, matching an already-known job even
 across sources), orchestration's per-source error isolation (one source
 failing never blocks the others), goal-over-profile query precedence,
 and the API endpoints.
+
+`tests/test_agent.py` covers Step 8's 68 tests: the tool registry (no
+duplicate names, every tool has a schema), the approval policy (LOW
+never gates, MEDIUM only for the always-listed tools, HIGH always gates
+even if a caller forgot to declare it), the full task/plan/event/
+approval DB layer, deterministic intent detection against every example
+command from the spec, plan validation, the executor's control flow
+(clean completion, the approval gate stopping and then correctly
+resuming on both approve and reject, `MAX_AGENT_STEPS` pausing rather
+than failing, retries recovering a transient failure while
+`application.submit` is never retried even once), `cv.generate`'s
+idempotency (reuses an already-approved version instead of generating a
+duplicate), conversational follow-up resolution, prompt-injection
+wrapping, a dedicated security section (unregistered tools rejected,
+malicious arguments schema-rejected, expired approvals can't be
+approved, duplicate submissions prevented, cancelling a task closes its
+open browser session), every API endpoint, and a synthetic end-to-end
+prepare-then-approve-then-submit workflow that never leaves `DRY_RUN`.
 
 ## 9. Frontend
 
@@ -1027,7 +1278,7 @@ Pages:
 - **Dashboard** (`/`) -- the Step 6 funnel, conversion rates, time-to-X
   stats, and upcoming interviews/follow-ups/deadlines, all from
   `GET /dashboard`.
-- **Discovery** (`/discovery`) -- the Step 8 job discovery run trigger,
+- **Discovery** (`/discovery`) -- the Step 2b job discovery run trigger,
   per-source status/configuration, and run history with a per-source
   found/created/duplicate/error breakdown.
 - **Recommendations** (`/recommendations`) -- the Step 7 recommendation
@@ -1056,7 +1307,7 @@ career-agent/
 │   ├── app/
 │   │   ├── main.py               FastAPI app, router registration, logging config
 │   │   ├── config.py              Settings (incl. OLLAMA_BASE_URL, OLLAMA_MODEL, COVER_LETTER_*)
-│   │   ├── api/                   One router per resource (incl. jobs.py, cvs.py, applications.py)
+│   │   ├── api/                   One router per resource (incl. jobs.py, cvs.py, applications.py, agent.py)
 │   │   ├── models/                SQLAlchemy models + shared enums
 │   │   ├── schemas/                Pydantic Create/Update/Read schemas
 │   │   ├── services/
@@ -1084,7 +1335,7 @@ career-agent/
 │   │   │   ├── export_service.py          Step 6: CSV/JSON application export
 │   │   │   ├── recommendation_engine.py   Step 7: the only writer of Recommendation rows
 │   │   │   ├── goal_service.py            Step 7: UserJobSearchGoal CRUD + progress comparison
-│   │   │   └── discovery_service.py       Step 8: builds the search query, runs each source, logs a DiscoveryRun
+│   │   │   └── discovery_service.py       Step 2b: builds the search query, runs each source, logs a DiscoveryRun
 │   │   ├── cli.py                         Step 6: `python -m app.cli backup`
 │   │   ├── intelligence/                  Step 7: deterministic analyzers (no LLM except explainer/interview_analyzer)
 │   │   │   ├── confidence.py              Small-sample-protected confidence scoring
@@ -1096,7 +1347,7 @@ career-agent/
 │   │   │   ├── application_analyzer.py    Per-job/per-application intelligence assembly
 │   │   │   ├── interview_analyzer.py      Interview prep context/output + question/answer generation
 │   │   │   └── recommendation_explainer.py  LLM explanation layer + output validation
-│   │   ├── discovery/                     Step 8: one adapter per public job source, no LLM involved
+│   │   ├── discovery/                     Step 2b: one adapter per public job source, no LLM involved
 │   │   │   ├── base.py                    DiscoveredJob/DiscoveryQuery + DiscoverySourceError
 │   │   │   ├── matching.py                Keyword matching + Greenhouse/Lever board-token guessing
 │   │   │   ├── greenhouse.py              Per-company board API (no key)
@@ -1131,13 +1382,29 @@ career-agent/
 │   │   │   └── recommendation_outputs.py    Step 7 LLM output schema
 │   │   ├── scripts/
 │   │   │   └── analyze_job.py     Manual end-to-end demo script (Step 2)
+│   │   ├── agent/                         Step 8: orchestrator over Steps 1-7, no reimplementation
+│   │   │   ├── tool_registry.py           ~44 ToolSpecs (schema/permission/risk/handler)
+│   │   │   ├── tools/                     One module per domain; handlers call existing services/routers
+│   │   │   ├── tool_router.py             Validates args, invokes, normalizes {success,data,warnings,errors}
+│   │   │   ├── planner.py                 Deterministic intent regexes + LLM classification fallback + plan templates
+│   │   │   ├── executor.py                The controlled step-by-step loop, approval gating, retries, MAX_AGENT_STEPS
+│   │   │   ├── permissions.py             The LOW/MEDIUM/HIGH approval policy
+│   │   │   ├── approval_manager.py        request/approve/reject/expire -- the only writer of AgentApproval.status
+│   │   │   ├── task_manager.py            DB access layer for AgentTask/AgentPlanStep/AgentEvent/AgentApproval
+│   │   │   ├── memory.py                  Resolves conversational follow-ups against a prior task's own result
+│   │   │   ├── validators.py              Pre-flight plan validation + untrusted-text wrapping (prompt-injection defense)
+│   │   │   ├── state.py                   AgentState snapshot assembled from the DB rows
+│   │   │   ├── prompts.py                 Intent-classification schema/prompt (the LLM's only role here)
+│   │   │   ├── errors.py                  Agent-layer exception hierarchy
+│   │   │   ├── agent.py                   handle_chat_message/resume_task/pause_task/cancel_task
+│   │   │   └── __main__.py                `python -m app.agent <command>` CLI
 │   │   └── db/                    Engine/session, declarative Base
 │   ├── alembic/                   Migrations (Steps 1-8, applied in order)
-│   ├── tests/                     pytest suite + tests/fixtures/ (local HTML, Step 5 only)
+│   ├── tests/                     pytest suite + tests/fixtures/ (local HTML, Step 5 only); test_agent.py for Step 8
 │   ├── requirements.txt
 │   ├── pytest.ini
 │   ├── launchd/
-│   │   └── com.jobiest.career-agent-backend.plist.example  Step 8: persistent macOS service template
+│   │   └── com.jobiest.career-agent-backend.plist.example  Step 2b: persistent macOS service template
 │   └── .env.example
 ├── frontend/
 │   ├── src/
@@ -1184,8 +1451,14 @@ notifications (email/calendar/push) beyond the current read-only
 feedback (accept/dismiss/complete) is stored but not yet used to actually
 tune future ranking -- `recommendation_engine.py` is the natural place a
 future step would add that. LinkedIn and Indeed are deliberately never
-scraped by Step 8 (see `app/discovery/base.py`) -- jobs from either stay
+scraped by Step 2b (see `app/discovery/base.py`) -- jobs from either stay
 a manual paste/URL flow through Step 2. Greenhouse/Lever discovery only
 searches companies you've explicitly listed in your job-search goal's
 `target_companies` -- there's no cross-company search API for either, by
-design on their end, not a gap in this implementation.
+design on their end, not a gap in this implementation. Step 8's agent
+doesn't stream progress (`POST /agent/chat/stream` was explicitly
+optional in its own spec) and has no real email/calendar/LinkedIn/
+job-board connectors yet -- `interview.py`-style tool modules are the
+natural place to add one once a real integration target exists, gated
+behind the same approval policy every `EXTERNAL_ACTION` tool already
+goes through.

@@ -329,7 +329,21 @@ def test_run_discovery_dedups_across_the_same_run(db_session, mocker):
 
 
 def test_discovery_sources_endpoint(client):
-    resp = client.get("/discovery/sources")
+    # Deliberately overrides whatever real keys .env may have (a
+    # developer's own local Adzuna/USAJobs credentials, say) so this test
+    # exercises the "not configured" branch regardless of the environment
+    # it happens to run in -- mirrors conftest.py's allow_real_submit
+    # pattern of mutating the cached Settings singleton for one test.
+    from app.config import get_settings
+
+    settings = get_settings()
+    original = (settings.adzuna_app_id, settings.adzuna_app_key, settings.usajobs_api_key, settings.usajobs_user_agent_email)
+    settings.adzuna_app_id = settings.adzuna_app_key = settings.usajobs_api_key = settings.usajobs_user_agent_email = ""
+    try:
+        resp = client.get("/discovery/sources")
+    finally:
+        settings.adzuna_app_id, settings.adzuna_app_key, settings.usajobs_api_key, settings.usajobs_user_agent_email = original
+
     assert resp.status_code == 200
     sources = {s["source"]: s for s in resp.json()}
     assert set(sources) == {"greenhouse", "lever", "remoteok", "weworkremotely", "adzuna", "usajobs"}
