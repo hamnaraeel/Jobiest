@@ -872,6 +872,50 @@ source (no AI extraction needed just to know those).
 Full Step 8 endpoint list: `POST /discovery/run`, `GET /discovery/runs`,
 `GET /discovery/runs/{id}`, `GET /discovery/sources`.
 
+### Running persistently on macOS (survives reboots)
+
+`DISCOVERY_SCHEDULER_ENABLED=true` only fires while the `uvicorn`
+process is alive -- there's no separate daemon. To keep it running
+across logins/reboots on macOS without a terminal window open, run the
+backend as a per-user `launchd` LaunchAgent (no `sudo`/root daemon
+needed):
+
+```bash
+cp launchd/com.jobiest.career-agent-backend.plist.example \
+   ~/Library/LaunchAgents/com.jobiest.career-agent-backend.plist
+```
+
+Edit the copied file and replace every `/ABSOLUTE/PATH/TO/...`
+placeholder with your actual paths (the repo's `career-agent/backend`
+directory, and your home directory for the log files), then load it:
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.jobiest.career-agent-backend.plist
+```
+
+It starts immediately and again on every future login; `KeepAlive`
+restarts it automatically if it ever crashes. Useful commands:
+
+```bash
+launchctl print gui/$(id -u)/com.jobiest.career-agent-backend   # status, pid, paths
+launchctl kickstart -k gui/$(id -u)/com.jobiest.career-agent-backend   # restart (e.g. after a code change)
+launchctl bootout gui/$(id -u)/com.jobiest.career-agent-backend   # stop and unload
+```
+
+Logs go to `StandardOutPath`/`StandardErrorPath` in the plist (the
+`.err.log` file is where uvicorn's own INFO logs land, not just errors).
+Notes:
+
+- This starts at **login**, not at raw boot before anyone logs in --
+  the normal scope for a per-user LaunchAgent. Enable auto-login if you
+  want it up before you're at the keyboard.
+- The plist doesn't pass `--reload`, since a hot-reloading process tree
+  doesn't fit launchd's supervision model well -- after editing backend
+  code, restart with `launchctl kickstart -k ...` above.
+- Once loaded, this owns port 8000. Don't also run a manual
+  `uvicorn --port 8000` alongside it -- use a different port for that if
+  you need a separate hot-reloading instance while developing.
+
 ## 8. Testing
 
 Tests run against a real PostgreSQL database (with pgvector) — point
@@ -1092,6 +1136,8 @@ career-agent/
 │   ├── tests/                     pytest suite + tests/fixtures/ (local HTML, Step 5 only)
 │   ├── requirements.txt
 │   ├── pytest.ini
+│   ├── launchd/
+│   │   └── com.jobiest.career-agent-backend.plist.example  Step 8: persistent macOS service template
 │   └── .env.example
 ├── frontend/
 │   ├── src/
