@@ -430,3 +430,76 @@ class RejectionReason(str, enum.Enum):
     POSITION_CLOSED = "position_closed"
     UNKNOWN = "unknown"
     OTHER = "other"
+
+
+# --- Step 8: AI job search agent / orchestrator ---
+# The agent never invents new capability -- every AgentPlanStep.tool
+# below is a thin, validated wrapper around a Steps-1-7 service/router
+# function. These enums describe the *orchestration* layer only.
+
+
+class AgentTaskStatus(str, enum.Enum):
+    CREATED = "created"
+    PLANNING = "planning"
+    RUNNING = "running"
+    WAITING_FOR_APPROVAL = "waiting_for_approval"
+    WAITING_FOR_USER_INPUT = "waiting_for_user_input"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class AgentPlanStepStatus(str, enum.Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    WAITING_FOR_APPROVAL = "waiting_for_approval"
+    SKIPPED = "skipped"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class AgentEventType(str, enum.Enum):
+    TASK_CREATED = "task_created"
+    PLANNING_STARTED = "planning_started"
+    PLAN_CREATED = "plan_created"
+    TOOL_STARTED = "tool_started"
+    TOOL_COMPLETED = "tool_completed"
+    TOOL_FAILED = "tool_failed"
+    APPROVAL_REQUESTED = "approval_requested"
+    APPROVAL_RECEIVED = "approval_received"
+    USER_INPUT_REQUIRED = "user_input_required"
+    TASK_PAUSED = "task_paused"
+    TASK_RESUMED = "task_resumed"
+    TASK_COMPLETED = "task_completed"
+    TASK_FAILED = "task_failed"
+    TASK_CANCELLED = "task_cancelled"
+
+
+class ToolPermission(str, enum.Enum):
+    """How a tool touches the system -- READ_ONLY tools never write;
+    WRITE tools persist local data; EXTERNAL_ACTION tools reach outside
+    this machine (a real browser session against a real job site)."""
+
+    READ_ONLY = "read_only"
+    WRITE = "write"
+    EXTERNAL_ACTION = "external_action"
+
+
+class ToolRiskLevel(str, enum.Enum):
+    """LOW runs automatically. MEDIUM runs automatically unless it
+    touches important persistent data (see permissions.py). HIGH always
+    requires explicit approval, no exceptions -- see permissions.py's
+    ALWAYS_REQUIRES_APPROVAL tools (submission, external messages,
+    profile changes, offer acceptance)."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class AgentApprovalStatus(str, enum.Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EXPIRED = "expired"

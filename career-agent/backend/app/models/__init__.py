@@ -34,3 +34,4 @@ from app.models.job_note import JobNote  # noqa: F401
 from app.models.recommendation import Recommendation  # noqa: F401
 from app.models.user_job_search_goal import UserJobSearchGoal  # noqa: F401
 from app.models.discovery_run import DiscoveryRun  # noqa: F401
+from app.models.agent import AgentTask, AgentPlanStep, AgentEvent, AgentApproval  # noqa: F401

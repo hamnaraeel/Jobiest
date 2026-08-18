@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     default_followup_days: int = 7
     timezone: str = "UTC"
 
-    # Step 8: job discovery. Greenhouse/Lever/RemoteOK/WWR need no key at
+    # Step 2b: job discovery. Greenhouse/Lever/RemoteOK/WWR need no key at
     # all; Adzuna and USAJobs are free but keyed -- leave their keys blank
     # to simply skip those two sources (reported, not a hard failure).
     # LinkedIn/Indeed are deliberately absent: both prohibit automated
@@ -60,6 +60,21 @@ class Settings(BaseSettings):
     # ever runs when you explicitly ask it to, until you opt in here.
     discovery_scheduler_enabled: bool = False
     discovery_scheduler_interval_hours: int = 24
+
+    # Step 8: AI job search agent / orchestrator. Conservative defaults on
+    # purpose (spec section 62) -- the agent can search/analyze/rank/
+    # generate/prepare on its own, but never submits an application or
+    # sends any external message without a separate, explicit approval.
+    # Reuses the existing `dry_run` flag (Step 5) as the hard submission
+    # gate rather than introducing a second identical setting.
+    agent_enabled: bool = True
+    max_agent_steps: int = 20
+    max_agent_retries: int = 2
+    auto_generate_materials: bool = True
+    auto_prepare_applications: bool = True
+    auto_submit_applications: bool = False
+    auto_send_messages: bool = False
+    require_approval_for_external_actions: bool = True
 
     # Frontend (React/Vite dev server). Only used to configure CORS --
     # the dev server itself proxies /api requests same-origin, so this
