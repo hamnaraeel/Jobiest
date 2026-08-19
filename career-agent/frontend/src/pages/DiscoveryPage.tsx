@@ -88,7 +88,7 @@ export default function DiscoveryPage() {
             the Jobs page.
           </p>
         </div>
-        <Button variant="primary" onClick={handleRun} disabled={running}>
+        <Button variant="primary" onClick={handleRun} disabled={running} className="shrink-0 whitespace-nowrap">
           {running ? 'Running…' : 'Run discovery now'}
         </Button>
       </div>
