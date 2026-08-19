@@ -10,12 +10,12 @@ interface CardProps {
 
 export default function Card({ title, subtitle, action, children, className = '' }: CardProps) {
   return (
-    <section className={`rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 ${className}`}>
+    <section className={`glass-card rounded-2xl p-5 transition-shadow duration-300 hover:shadow-[0_24px_50px_-15px_rgba(0,0,0,0.55)] ${className}`}>
       {(title || action) && (
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
-            {title && <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-50">{title}</h2>}
-            {subtitle && <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{subtitle}</p>}
+            {title && <h2 className="text-sm font-semibold text-slate-50">{title}</h2>}
+            {subtitle && <p className="mt-0.5 text-xs text-slate-400">{subtitle}</p>}
           </div>
           {action}
         </div>

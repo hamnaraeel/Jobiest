@@ -5,7 +5,7 @@ import StatCard from '../components/StatCard'
 import Card from '../components/Card'
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState'
 
-const FUNNEL_COLORS = ['#6366f1', '#818cf8', '#a5b4fc', '#f59e0b', '#34d399', '#10b981', '#059669']
+const FUNNEL_COLORS = ['#818cf8', '#a78bfa', '#c084fc', '#e879f9', '#f0abfc', '#5eead4', '#34d399']
 
 function formatRate(rate: number | null): string {
   return rate === null ? '—' : `${rate}%`
@@ -38,8 +38,8 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-50">Dashboard</h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Your job search at a glance.</p>
+        <h1 className="gradient-text text-3xl font-bold tracking-tight">Dashboard</h1>
+        <p className="mt-1 text-sm text-slate-400">Your job search at a glance.</p>
       </div>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
@@ -54,10 +54,13 @@ export default function DashboardPage() {
       <Card title="Application funnel" subtitle="Discovered → Shortlisted → Applied → Response → Interview → Offer → Accepted">
         <ResponsiveContainer width="100%" height={260}>
           <BarChart data={funnelData} layout="vertical" margin={{ left: 24 }}>
-            <CartesianGrid strokeDasharray="3 3" horizontal={false} className="stroke-slate-200 dark:stroke-slate-800" />
-            <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12 }} />
-            <YAxis type="category" dataKey="stage" width={90} tick={{ fontSize: 12 }} />
-            <Tooltip />
+            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(255,255,255,0.08)" />
+            <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: '#94a3b8' }} stroke="rgba(255,255,255,0.12)" />
+            <YAxis type="category" dataKey="stage" width={90} tick={{ fontSize: 12, fill: '#cbd5e1' }} stroke="rgba(255,255,255,0.12)" />
+            <Tooltip
+              cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+              contentStyle={{ background: 'rgba(20,14,40,0.95)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, color: '#f4f3ff' }}
+            />
             <Bar dataKey="count" radius={[0, 4, 4, 0]}>
               {funnelData.map((entry, index) => (
                 <Cell key={entry.stage} fill={FUNNEL_COLORS[index % FUNNEL_COLORS.length]} />
@@ -70,33 +73,33 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card title="Conversion rates" subtitle="Safe-divided -- shown as — when there isn't enough data yet">
           <dl className="grid grid-cols-2 gap-y-3 text-sm">
-            <dt className="text-slate-500 dark:text-slate-400">Shortlist rate</dt>
-            <dd className="text-right font-medium">{formatRate(rates.shortlist_rate)}</dd>
-            <dt className="text-slate-500 dark:text-slate-400">Application rate</dt>
-            <dd className="text-right font-medium">{formatRate(rates.application_rate)}</dd>
-            <dt className="text-slate-500 dark:text-slate-400">Response rate</dt>
-            <dd className="text-right font-medium">{formatRate(rates.response_rate)}</dd>
-            <dt className="text-slate-500 dark:text-slate-400">Interview rate</dt>
-            <dd className="text-right font-medium">{formatRate(rates.interview_rate)}</dd>
-            <dt className="text-slate-500 dark:text-slate-400">Offer rate</dt>
-            <dd className="text-right font-medium">{formatRate(rates.offer_rate)}</dd>
-            <dt className="text-slate-500 dark:text-slate-400">Overall offer rate</dt>
-            <dd className="text-right font-medium">{formatRate(rates.overall_offer_rate)}</dd>
+            <dt className="text-slate-400">Shortlist rate</dt>
+            <dd className="text-right font-medium text-slate-100">{formatRate(rates.shortlist_rate)}</dd>
+            <dt className="text-slate-400">Application rate</dt>
+            <dd className="text-right font-medium text-slate-100">{formatRate(rates.application_rate)}</dd>
+            <dt className="text-slate-400">Response rate</dt>
+            <dd className="text-right font-medium text-slate-100">{formatRate(rates.response_rate)}</dd>
+            <dt className="text-slate-400">Interview rate</dt>
+            <dd className="text-right font-medium text-slate-100">{formatRate(rates.interview_rate)}</dd>
+            <dt className="text-slate-400">Offer rate</dt>
+            <dd className="text-right font-medium text-slate-100">{formatRate(rates.offer_rate)}</dd>
+            <dt className="text-slate-400">Overall offer rate</dt>
+            <dd className="text-right font-medium text-slate-100">{formatRate(rates.overall_offer_rate)}</dd>
           </dl>
         </Card>
 
         <Card title="Time to..." subtitle="Days from submission, median / average">
           <dl className="grid grid-cols-3 gap-y-3 text-sm">
-            <dt className="col-span-2 text-slate-500 dark:text-slate-400">First response</dt>
-            <dd className="text-right font-medium">
+            <dt className="col-span-2 text-slate-400">First response</dt>
+            <dd className="text-right font-medium text-slate-100">
               {formatDuration(data.analytics.time_to_response_days.median)} / {formatDuration(data.analytics.time_to_response_days.average)}
             </dd>
-            <dt className="col-span-2 text-slate-500 dark:text-slate-400">First interview</dt>
-            <dd className="text-right font-medium">
+            <dt className="col-span-2 text-slate-400">First interview</dt>
+            <dd className="text-right font-medium text-slate-100">
               {formatDuration(data.analytics.time_to_interview_days.median)} / {formatDuration(data.analytics.time_to_interview_days.average)}
             </dd>
-            <dt className="col-span-2 text-slate-500 dark:text-slate-400">First offer</dt>
-            <dd className="text-right font-medium">
+            <dt className="col-span-2 text-slate-400">First offer</dt>
+            <dd className="text-right font-medium text-slate-100">
               {formatDuration(data.analytics.time_to_offer_days.median)} / {formatDuration(data.analytics.time_to_offer_days.average)}
             </dd>
           </dl>
@@ -107,11 +110,11 @@ export default function DashboardPage() {
         {!calendar || calendar.length === 0 ? (
           <EmptyState message="Nothing upcoming." />
         ) : (
-          <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+          <ul className="divide-y divide-white/[0.06]">
             {calendar.slice(0, 8).map((item, index) => (
               <li key={index} className="flex items-center justify-between py-2.5 text-sm">
-                <span className="text-slate-700 dark:text-slate-300">{item.message}</span>
-                <span className="text-xs text-slate-400 dark:text-slate-500">{new Date(item.date).toLocaleDateString()}</span>
+                <span className="text-slate-200">{item.message}</span>
+                <span className="text-xs text-slate-500">{new Date(item.date).toLocaleDateString()}</span>
               </li>
             ))}
           </ul>

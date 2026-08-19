@@ -25,24 +25,24 @@ function ScorePanel({
   return (
     <Card title={title}>
       <div className="mb-3 flex items-baseline gap-2">
-        <span className="text-3xl font-semibold text-slate-900 dark:text-slate-50">{score}</span>
-        <span className="text-sm text-slate-400">/ 100</span>
+        <span className="gradient-text text-3xl font-bold">{score}</span>
+        <span className="text-sm text-slate-500">/ 100</span>
         {confidence !== undefined && <ConfidenceBar confidence={confidence} reason={confidenceReason} />}
       </div>
       {reasons.length > 0 && (
         <ul className="mb-2 flex flex-col gap-1">
           {reasons.map((r, i) => (
-            <li key={i} className="flex gap-2 text-sm text-slate-600 dark:text-slate-300">
-              <span className="text-emerald-500">✓</span>
+            <li key={i} className="flex gap-2 text-sm text-slate-300">
+              <span className="text-emerald-400">✓</span>
               {r}
             </li>
           ))}
         </ul>
       )}
       {warnings.length > 0 && (
-        <ul className="flex flex-col gap-1 border-t border-slate-100 pt-2 dark:border-slate-800">
+        <ul className="flex flex-col gap-1 border-t border-white/10 pt-2">
           {warnings.map((w, i) => (
-            <li key={i} className="flex gap-2 text-sm text-amber-600 dark:text-amber-400">
+            <li key={i} className="flex gap-2 text-sm text-amber-300">
               <span>⚠</span>
               {w}
             </li>
@@ -73,8 +73,8 @@ export default function JobDetailPage() {
             <StatusBadge status={job.status} />
             <StatusBadge status={job.priority} />
           </div>
-          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-50">{job.title ?? 'Untitled role'}</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          <h1 className="gradient-text text-2xl font-bold tracking-tight">{job.title ?? 'Untitled role'}</h1>
+          <p className="mt-1 text-sm text-slate-400">
             {job.company ?? 'Unknown company'} {job.location ? `· ${job.location}` : ''}
           </p>
         </div>
@@ -131,24 +131,24 @@ export default function JobDetailPage() {
             <Card title="Requirement match" subtitle={matchAnalysis.overall_score !== undefined ? `Overall: ${matchAnalysis.overall_score}%` : undefined}>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div>
-                  <h4 className="mb-1.5 text-xs font-semibold uppercase text-emerald-600 dark:text-emerald-400">Matched</h4>
-                  <ul className="flex flex-col gap-1 text-sm text-slate-600 dark:text-slate-300">
+                  <h4 className="mb-1.5 text-xs font-semibold uppercase text-emerald-400">Matched</h4>
+                  <ul className="flex flex-col gap-1 text-sm text-slate-300">
                     {(matchAnalysis.matched ?? []).map((r) => (
                       <li key={r}>{r}</li>
                     ))}
                   </ul>
                 </div>
                 <div>
-                  <h4 className="mb-1.5 text-xs font-semibold uppercase text-amber-600 dark:text-amber-400">Partial</h4>
-                  <ul className="flex flex-col gap-1 text-sm text-slate-600 dark:text-slate-300">
+                  <h4 className="mb-1.5 text-xs font-semibold uppercase text-amber-400">Partial</h4>
+                  <ul className="flex flex-col gap-1 text-sm text-slate-300">
                     {(matchAnalysis.partial ?? []).map((r) => (
                       <li key={r}>{r}</li>
                     ))}
                   </ul>
                 </div>
                 <div>
-                  <h4 className="mb-1.5 text-xs font-semibold uppercase text-rose-600 dark:text-rose-400">Missing</h4>
-                  <ul className="flex flex-col gap-1 text-sm text-slate-600 dark:text-slate-300">
+                  <h4 className="mb-1.5 text-xs font-semibold uppercase text-rose-400">Missing</h4>
+                  <ul className="flex flex-col gap-1 text-sm text-slate-300">
                     {(matchAnalysis.missing ?? []).map((r) => (
                       <li key={r}>{r}</li>
                     ))}
@@ -160,7 +160,7 @@ export default function JobDetailPage() {
 
           {intel.cv_recommendations.length > 0 && (
             <Card title="CV recommendations" subtitle="Only ever suggests what your Career Profile already supports">
-              <ul className="flex flex-col gap-2 text-sm text-slate-600 dark:text-slate-300">
+              <ul className="flex flex-col gap-2 text-sm text-slate-300">
                 {intel.cv_recommendations.map((rec, i) => (
                   <li key={i}>{rec}</li>
                 ))}
@@ -172,12 +172,12 @@ export default function JobDetailPage() {
 
       {job.description && (
         <Card title="Job description">
-          <p className="whitespace-pre-line text-sm text-slate-600 dark:text-slate-300">{job.description}</p>
+          <p className="whitespace-pre-line text-sm text-slate-300">{job.description}</p>
         </Card>
       )}
 
       <div>
-        <Link to="/jobs" className="text-sm text-indigo-600 hover:underline dark:text-indigo-400">
+        <Link to="/jobs" className="text-sm text-violet-300 hover:text-violet-200 hover:underline">
           ← Back to jobs
         </Link>
       </div>

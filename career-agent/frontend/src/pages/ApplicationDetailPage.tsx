@@ -23,11 +23,13 @@ const STATUS_OPTIONS: ApplicationStatus[] = [
   'offer', 'accepted', 'rejected', 'withdrawn', 'ghosted', 'closed',
 ]
 
+const inputClass = 'glass-input rounded-lg px-3 py-1.5 text-sm transition-colors duration-200'
+
 function QualityCheck({ label, ok }: { label: string; ok: boolean }) {
   return (
     <div className="flex items-center gap-2 text-sm">
-      <span className={ok ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600'}>{ok ? '✓' : '○'}</span>
-      <span className={ok ? 'text-slate-700 dark:text-slate-200' : 'text-slate-400 dark:text-slate-500'}>{label}</span>
+      <span className={ok ? 'text-emerald-400' : 'text-slate-600'}>{ok ? '✓' : '○'}</span>
+      <span className={ok ? 'text-slate-200' : 'text-slate-500'}>{label}</span>
     </div>
   )
 }
@@ -93,8 +95,8 @@ export default function ApplicationDetailPage() {
             <StatusBadge status={application.priority} />
             {application.archived && <StatusBadge status="archived" />}
           </div>
-          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-50">Application #{application.id}</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          <h1 className="gradient-text text-2xl font-bold tracking-tight">Application #{application.id}</h1>
+          <p className="mt-1 text-sm text-slate-400">
             {application.source ?? 'Unknown source'}
             {application.submitted_at ? ` · submitted ${new Date(application.submitted_at).toLocaleDateString()}` : ''}
           </p>
@@ -124,7 +126,7 @@ export default function ApplicationDetailPage() {
             <QualityCheck label="Required fields complete" ok={intel.quality.questions_complete} />
           </div>
           {intel.followup_recommendation && (
-            <p className="mt-3 border-t border-slate-100 pt-3 text-sm text-indigo-600 dark:border-slate-800 dark:text-indigo-400">
+            <p className="mt-3 border-t border-white/10 pt-3 text-sm text-violet-300">
               {intel.followup_recommendation}
             </p>
           )}
@@ -133,14 +135,10 @@ export default function ApplicationDetailPage() {
 
       <Card title="Update status" subtitle="Every change is recorded, never overwritten">
         <div className="flex flex-wrap items-end gap-3">
-          <select
-            value={statusChoice}
-            onChange={(e) => setStatusChoice(e.target.value)}
-            className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900"
-          >
-            <option value="">Choose new status…</option>
+          <select value={statusChoice} onChange={(e) => setStatusChoice(e.target.value)} className={inputClass}>
+            <option value="" className="bg-[#160f2e]">Choose new status…</option>
             {STATUS_OPTIONS.map((s) => (
-              <option key={s} value={s}>
+              <option key={s} value={s} className="bg-[#160f2e]">
                 {s.replace(/_/g, ' ')}
               </option>
             ))}
@@ -149,7 +147,7 @@ export default function ApplicationDetailPage() {
             value={statusReason}
             onChange={(e) => setStatusReason(e.target.value)}
             placeholder="Reason (optional)…"
-            className="min-w-[220px] flex-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900"
+            className={`min-w-[220px] flex-1 ${inputClass}`}
           />
           <Button variant="primary" disabled={!statusChoice || updatingStatus} onClick={handleStatusUpdate}>
             Update
@@ -167,8 +165,8 @@ export default function ApplicationDetailPage() {
                 <li key={i} className="flex gap-3 text-sm">
                   <span className="shrink-0">{ENTRY_ICON[entry.entry_type] ?? '•'}</span>
                   <div>
-                    <p className="text-slate-700 dark:text-slate-200">{entry.description}</p>
-                    <p className="text-xs text-slate-400 dark:text-slate-500">{new Date(entry.timestamp).toLocaleString()}</p>
+                    <p className="text-slate-200">{entry.description}</p>
+                    <p className="text-xs text-slate-500">{new Date(entry.timestamp).toLocaleString()}</p>
                   </div>
                 </li>
               ))}
@@ -183,13 +181,13 @@ export default function ApplicationDetailPage() {
             ) : (
               <ul className="flex flex-col gap-2">
                 {interviews.map((iv) => (
-                  <li key={iv.id} className="rounded-md border border-slate-100 p-2.5 text-sm dark:border-slate-800">
+                  <li key={iv.id} className="rounded-lg border border-white/10 bg-white/[0.03] p-2.5 text-sm">
                     <div className="flex items-center justify-between">
-                      <span className="font-medium capitalize text-slate-700 dark:text-slate-200">{iv.type.replace(/_/g, ' ')}</span>
+                      <span className="font-medium capitalize text-slate-200">{iv.type.replace(/_/g, ' ')}</span>
                       <StatusBadge status={iv.status} />
                     </div>
-                    {iv.scheduled_at && <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{new Date(iv.scheduled_at).toLocaleString()}</p>}
-                    {iv.interviewer && <p className="text-xs text-slate-400">with {iv.interviewer}</p>}
+                    {iv.scheduled_at && <p className="mt-1 text-xs text-slate-400">{new Date(iv.scheduled_at).toLocaleString()}</p>}
+                    {iv.interviewer && <p className="text-xs text-slate-500">with {iv.interviewer}</p>}
                   </li>
                 ))}
               </ul>
@@ -202,13 +200,13 @@ export default function ApplicationDetailPage() {
             ) : (
               <ul className="flex flex-col gap-2">
                 {offers.map((offer) => (
-                  <li key={offer.id} className="rounded-md border border-slate-100 p-2.5 text-sm dark:border-slate-800">
+                  <li key={offer.id} className="rounded-lg border border-white/10 bg-white/[0.03] p-2.5 text-sm">
                     <div className="flex items-center justify-between">
-                      <span className="font-medium text-slate-700 dark:text-slate-200">{offer.role ?? 'Role'}</span>
+                      <span className="font-medium text-slate-200">{offer.role ?? 'Role'}</span>
                       <StatusBadge status={offer.status} />
                     </div>
                     {offer.salary && (
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      <p className="mt-1 text-xs text-slate-400">
                         {offer.salary.toLocaleString()} {offer.currency}
                       </p>
                     )}
@@ -222,7 +220,7 @@ export default function ApplicationDetailPage() {
 
       {intel?.interview_preparation && (
         <Card title="Interview preparation context" subtitle="Assembled from the job description, CV, and matched skills -- no invented content">
-          <pre className="max-h-64 overflow-auto rounded-md bg-slate-50 p-3 text-xs text-slate-600 dark:bg-slate-950 dark:text-slate-400">
+          <pre className="max-h-64 overflow-auto rounded-lg border border-white/10 bg-black/30 p-3 text-xs text-slate-400">
             {JSON.stringify(intel.interview_preparation, null, 2)}
           </pre>
         </Card>
@@ -234,7 +232,7 @@ export default function ApplicationDetailPage() {
             value={noteText}
             onChange={(e) => setNoteText(e.target.value)}
             placeholder="Add a note…"
-            className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900"
+            className={`flex-1 ${inputClass}`}
             onKeyDown={(e) => e.key === 'Enter' && handleAddNote()}
           />
           <Button variant="primary" disabled={addingNote || !noteText.trim()} onClick={handleAddNote}>
@@ -246,9 +244,9 @@ export default function ApplicationDetailPage() {
         ) : (
           <ul className="flex flex-col gap-2">
             {notes.map((note) => (
-              <li key={note.id} className="rounded-md border border-slate-100 p-2.5 text-sm dark:border-slate-800">
-                <p className="text-slate-700 dark:text-slate-200">{note.content}</p>
-                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">{new Date(note.created_at).toLocaleString()}</p>
+              <li key={note.id} className="rounded-lg border border-white/10 bg-white/[0.03] p-2.5 text-sm">
+                <p className="text-slate-200">{note.content}</p>
+                <p className="mt-1 text-xs text-slate-500">{new Date(note.created_at).toLocaleString()}</p>
               </li>
             ))}
           </ul>
@@ -256,7 +254,7 @@ export default function ApplicationDetailPage() {
       </Card>
 
       <div>
-        <Link to="/applications" className="text-sm text-indigo-600 hover:underline dark:text-indigo-400">
+        <Link to="/applications" className="text-sm text-violet-300 hover:text-violet-200 hover:underline">
           ← Back to applications
         </Link>
       </div>

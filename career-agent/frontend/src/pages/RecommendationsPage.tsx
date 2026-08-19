@@ -38,7 +38,7 @@ function RecommendationCard({ rec, onChange }: { rec: RecommendationRead; onChan
       : null
 
   return (
-    <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
+    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-colors duration-200 hover:bg-white/[0.05]">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="mb-1.5 flex flex-wrap items-center gap-2">
@@ -46,23 +46,23 @@ function RecommendationCard({ rec, onChange }: { rec: RecommendationRead; onChan
             <StatusBadge status={rec.priority} />
             <StatusBadge status={rec.status} />
           </div>
-          <h3 className="font-medium text-slate-900 dark:text-slate-50">{rec.title}</h3>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{rec.description}</p>
-          {rec.action && <p className="mt-2 text-sm font-medium text-indigo-600 dark:text-indigo-400">→ {rec.action}</p>}
+          <h3 className="font-medium text-slate-100">{rec.title}</h3>
+          <p className="mt-1 text-sm text-slate-300">{rec.description}</p>
+          {rec.action && <p className="mt-2 text-sm font-medium text-violet-300">→ {rec.action}</p>}
         </div>
         <ConfidenceBar confidence={rec.confidence} reason={rec.confidence_reason} />
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {relatedLink && (
-          <Link to={relatedLink.to} className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+          <Link to={relatedLink.to} className="text-xs font-medium text-violet-300 hover:text-violet-200 hover:underline">
             {relatedLink.label}
           </Link>
         )}
-        <button onClick={() => setExpanded((e) => !e)} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+        <button onClick={() => setExpanded((e) => !e)} className="text-xs text-slate-500 hover:text-slate-300">
           {expanded ? 'Hide evidence' : 'Show evidence'}
         </button>
-        <span className="text-xs text-slate-400" title={rec.confidence_reason}>
+        <span className="text-xs text-slate-500" title={rec.confidence_reason}>
           {rec.confidence_reason}
         </span>
         <div className="ml-auto flex gap-2">
@@ -85,7 +85,7 @@ function RecommendationCard({ rec, onChange }: { rec: RecommendationRead; onChan
       </div>
 
       {expanded && (
-        <pre className="mt-3 max-h-64 overflow-auto rounded-md bg-slate-50 p-3 text-xs text-slate-600 dark:bg-slate-950 dark:text-slate-400">
+        <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-white/10 bg-black/30 p-3 text-xs text-slate-400">
           {JSON.stringify(rec.evidence, null, 2)}
         </pre>
       )}
@@ -112,8 +112,8 @@ export default function RecommendationsPage() {
     <div className="flex flex-col gap-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-50">Recommendations</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          <h1 className="gradient-text text-3xl font-bold tracking-tight">Recommendations</h1>
+          <p className="mt-1 text-sm text-slate-400">
             Every recommendation carries evidence and a confidence score. Nothing here acts on its own -- you decide.
           </p>
         </div>
@@ -125,7 +125,7 @@ export default function RecommendationsPage() {
       <div className="flex gap-2">
         <button
           onClick={() => setStatusFilter('')}
-          className={`rounded-full px-3 py-1 text-xs font-medium ${statusFilter === '' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}
+          className={`rounded-full px-3 py-1 text-xs font-medium transition-all duration-200 ${statusFilter === '' ? 'gradient-accent text-white shadow-[0_4px_16px_-4px_rgba(139,92,246,0.6)]' : 'bg-white/[0.06] text-slate-300 hover:bg-white/[0.1]'}`}
         >
           All
         </button>
@@ -133,7 +133,7 @@ export default function RecommendationsPage() {
           <button
             key={s}
             onClick={() => setStatusFilter(s)}
-            className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${statusFilter === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}
+            className={`rounded-full px-3 py-1 text-xs font-medium capitalize transition-all duration-200 ${statusFilter === s ? 'gradient-accent text-white shadow-[0_4px_16px_-4px_rgba(139,92,246,0.6)]' : 'bg-white/[0.06] text-slate-300 hover:bg-white/[0.1]'}`}
           >
             {s}
           </button>

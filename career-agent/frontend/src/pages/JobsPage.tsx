@@ -15,6 +15,8 @@ const SORT_OPTIONS = [
   { value: 'priority', label: 'Priority' },
 ]
 
+const inputClass = 'glass-input rounded-lg px-3 py-1.5 text-sm transition-colors duration-200'
+
 export default function JobsPage() {
   const [company, setCompany] = useState('')
   const [status, setStatus] = useState('')
@@ -28,8 +30,8 @@ export default function JobsPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-50">Jobs</h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{data ? `${data.total} jobs` : 'Search and filter jobs.'}</p>
+        <h1 className="gradient-text text-3xl font-bold tracking-tight">Jobs</h1>
+        <p className="mt-1 text-sm text-slate-400">{data ? `${data.total} jobs` : 'Search and filter jobs.'}</p>
       </div>
 
       <div className="flex flex-wrap gap-3">
@@ -37,26 +39,18 @@ export default function JobsPage() {
           value={company}
           onChange={(e) => setCompany(e.target.value)}
           placeholder="Filter by company…"
-          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900"
+          className={inputClass}
         />
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900"
-        >
+        <select value={status} onChange={(e) => setStatus(e.target.value)} className={inputClass}>
           {STATUS_OPTIONS.map((s) => (
-            <option key={s} value={s}>
+            <option key={s} value={s} className="bg-[#160f2e]">
               {s === '' ? 'All statuses' : s.replace(/_/g, ' ')}
             </option>
           ))}
         </select>
-        <select
-          value={sort}
-          onChange={(e) => setSort(e.target.value)}
-          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900"
-        >
+        <select value={sort} onChange={(e) => setSort(e.target.value)} className={inputClass}>
           {SORT_OPTIONS.map((s) => (
-            <option key={s.value} value={s.value}>
+            <option key={s.value} value={s.value} className="bg-[#160f2e]">
               Sort: {s.label}
             </option>
           ))}
@@ -71,7 +65,7 @@ export default function JobsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400 dark:border-slate-800">
+                <tr className="border-b border-white/10 text-left text-xs uppercase tracking-wide text-slate-500">
                   <th className="pb-2 font-medium">Title</th>
                   <th className="pb-2 font-medium">Company</th>
                   <th className="pb-2 font-medium">Status</th>
@@ -79,22 +73,22 @@ export default function JobsPage() {
                   <th className="pb-2 font-medium">Deadline</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              <tbody className="divide-y divide-white/[0.06]">
                 {data.items.map((job) => (
-                  <tr key={job.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                  <tr key={job.id} className="transition-colors duration-150 hover:bg-white/[0.04]">
                     <td className="py-2.5">
-                      <Link to={`/jobs/${job.id}`} className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+                      <Link to={`/jobs/${job.id}`} className="font-medium text-violet-300 hover:text-violet-200 hover:underline">
                         {job.title ?? 'Untitled'}
                       </Link>
                     </td>
-                    <td className="py-2.5 text-slate-600 dark:text-slate-300">{job.company ?? '—'}</td>
+                    <td className="py-2.5 text-slate-300">{job.company ?? '—'}</td>
                     <td className="py-2.5">
                       <StatusBadge status={job.status} />
                     </td>
                     <td className="py-2.5">
                       <StatusBadge status={job.priority} />
                     </td>
-                    <td className="py-2.5 text-slate-500 dark:text-slate-400">
+                    <td className="py-2.5 text-slate-400">
                       {job.application_deadline ? new Date(job.application_deadline).toLocaleDateString() : '—'}
                     </td>
                   </tr>

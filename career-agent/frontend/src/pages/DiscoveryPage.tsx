@@ -18,14 +18,14 @@ const SOURCE_LABELS: Record<string, string> = {
 
 function SourceCard({ source, configured, requiresApiKey, note }: { source: string; configured: boolean; requiresApiKey: boolean; note: string }) {
   return (
-    <div className="rounded-lg border border-slate-100 p-3 dark:border-slate-800">
+    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
       <div className="mb-1 flex items-center justify-between gap-2">
-        <span className="text-sm font-medium text-slate-800 dark:text-slate-100">{SOURCE_LABELS[source] ?? source}</span>
+        <span className="text-sm font-medium text-slate-100">{SOURCE_LABELS[source] ?? source}</span>
         <Badge color={configured ? 'green' : requiresApiKey ? 'amber' : 'slate'}>
           {configured ? 'ready' : 'needs API key'}
         </Badge>
       </div>
-      <p className="text-xs text-slate-500 dark:text-slate-400">{note}</p>
+      <p className="text-xs text-slate-400">{note}</p>
     </div>
   )
 }
@@ -34,17 +34,17 @@ function ResultsBreakdown({ run }: { run: DiscoveryRunRead }) {
   return (
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       {Object.entries(run.results).map(([source, result]) => (
-        <div key={source} className="rounded-md border border-slate-100 p-2.5 text-sm dark:border-slate-800">
+        <div key={source} className="rounded-lg border border-white/10 bg-white/[0.03] p-2.5 text-sm">
           <div className="mb-1 flex items-center justify-between">
-            <span className="font-medium text-slate-700 dark:text-slate-200">{SOURCE_LABELS[source] ?? source}</span>
+            <span className="font-medium text-slate-200">{SOURCE_LABELS[source] ?? source}</span>
             {result.error ? <Badge color="red">error</Badge> : <Badge color="blue">{result.found} found</Badge>}
           </div>
           {result.error ? (
-            <p className="text-xs text-rose-600 dark:text-rose-400">{result.error}</p>
+            <p className="text-xs text-rose-400">{result.error}</p>
           ) : result.note ? (
             <p className="text-xs text-slate-400">{result.note}</p>
           ) : (
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-slate-400">
               {result.created} new · {result.duplicate} already known
             </p>
           )}
@@ -80,8 +80,8 @@ export default function DiscoveryPage() {
     <div className="flex flex-col gap-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-50">Discovery</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          <h1 className="gradient-text text-3xl font-bold tracking-tight">Discovery</h1>
+          <p className="mt-1 text-sm text-slate-400">
             Searches public job sources using your target roles, locations, and companies (configured via
             your career profile and job-search goals) and stores new matches as jobs. LinkedIn and Indeed
             aren't included -- both prohibit automated scraping, so those stay a manual paste/URL flow on
@@ -122,14 +122,14 @@ export default function DiscoveryPage() {
         {runsData && runsData.items.length > 0 && (
           <ol className="flex flex-col gap-3">
             {runsData.items.map((run) => (
-              <li key={run.id} className="rounded-md border border-slate-100 p-3 dark:border-slate-800">
+              <li key={run.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
                 <div className="mb-2 flex items-center justify-between gap-2 text-sm">
-                  <span className="font-medium text-slate-700 dark:text-slate-200">
+                  <span className="font-medium text-slate-200">
                     {new Date(run.started_at).toLocaleString()}
                   </span>
                   <div className="flex items-center gap-2">
                     <Badge color={run.trigger === 'manual' ? 'blue' : 'purple'}>{run.trigger}</Badge>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                    <span className="text-xs text-slate-400">
                       {run.jobs_found} found · {run.jobs_created} new
                     </span>
                   </div>

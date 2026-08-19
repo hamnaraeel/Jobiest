@@ -18,6 +18,8 @@ const SORT_OPTIONS = [
   { value: 'latest_status_change', label: 'Latest status change' },
 ]
 
+const inputClass = 'glass-input rounded-lg px-3 py-1.5 text-sm transition-colors duration-200'
+
 export default function ApplicationsPage() {
   const [company, setCompany] = useState('')
   const [status, setStatus] = useState('')
@@ -31,8 +33,8 @@ export default function ApplicationsPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-50">Applications</h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{data ? `${data.total} applications` : 'Search and filter applications.'}</p>
+        <h1 className="gradient-text text-3xl font-bold tracking-tight">Applications</h1>
+        <p className="mt-1 text-sm text-slate-400">{data ? `${data.total} applications` : 'Search and filter applications.'}</p>
       </div>
 
       <div className="flex flex-wrap gap-3">
@@ -40,26 +42,18 @@ export default function ApplicationsPage() {
           value={company}
           onChange={(e) => setCompany(e.target.value)}
           placeholder="Filter by company…"
-          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900"
+          className={inputClass}
         />
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900"
-        >
+        <select value={status} onChange={(e) => setStatus(e.target.value)} className={inputClass}>
           {STATUS_OPTIONS.map((s) => (
-            <option key={s} value={s}>
+            <option key={s} value={s} className="bg-[#160f2e]">
               {s === '' ? 'All statuses' : s.replace(/_/g, ' ')}
             </option>
           ))}
         </select>
-        <select
-          value={sort}
-          onChange={(e) => setSort(e.target.value)}
-          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900"
-        >
+        <select value={sort} onChange={(e) => setSort(e.target.value)} className={inputClass}>
           {SORT_OPTIONS.map((s) => (
-            <option key={s.value} value={s.value}>
+            <option key={s.value} value={s.value} className="bg-[#160f2e]">
               Sort: {s.label}
             </option>
           ))}
@@ -74,7 +68,7 @@ export default function ApplicationsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400 dark:border-slate-800">
+                <tr className="border-b border-white/10 text-left text-xs uppercase tracking-wide text-slate-500">
                   <th className="pb-2 font-medium">Application</th>
                   <th className="pb-2 font-medium">Status</th>
                   <th className="pb-2 font-medium">Priority</th>
@@ -82,11 +76,11 @@ export default function ApplicationsPage() {
                   <th className="pb-2 font-medium">Submitted</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              <tbody className="divide-y divide-white/[0.06]">
                 {data.items.map((application) => (
-                  <tr key={application.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                  <tr key={application.id} className="transition-colors duration-150 hover:bg-white/[0.04]">
                     <td className="py-2.5">
-                      <Link to={`/applications/${application.id}`} className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+                      <Link to={`/applications/${application.id}`} className="font-medium text-violet-300 hover:text-violet-200 hover:underline">
                         Application #{application.id}
                       </Link>
                     </td>
@@ -96,8 +90,8 @@ export default function ApplicationsPage() {
                     <td className="py-2.5">
                       <StatusBadge status={application.priority} />
                     </td>
-                    <td className="py-2.5 text-slate-600 dark:text-slate-300">{application.source ?? '—'}</td>
-                    <td className="py-2.5 text-slate-500 dark:text-slate-400">
+                    <td className="py-2.5 text-slate-300">{application.source ?? '—'}</td>
+                    <td className="py-2.5 text-slate-400">
                       {application.submitted_at ? new Date(application.submitted_at).toLocaleDateString() : '—'}
                     </td>
                   </tr>
