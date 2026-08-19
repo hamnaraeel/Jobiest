@@ -27,6 +27,52 @@ logger = logging.getLogger("app.agent.executor")
 NEVER_RETRY_TOOLS = frozenset({"application.submit", "application.approve_submission"})
 
 
+def _blocking_reason(tool: str, data: dict) -> str | None:
+    """Some tools can succeed but still mean "a human needs to do
+    something in the real world before this can continue" (spec sections
+    14, 22-23: CAPTCHA, login, an unanswerable field) -- distinct from a
+    tool failing. Returns a clear message describing what's needed, or
+    None if the step can just proceed normally. The step that triggered
+    this is left PENDING (not COMPLETED) so resuming re-runs it and
+    naturally re-checks whether the blocker is now cleared."""
+
+    if tool == "application.analyze_page":
+        if data.get("captcha_detected"):
+            indicator = data.get("captcha_indicator")
+            return (
+                f"A CAPTCHA was detected on the application page{f' ({indicator})' if indicator else ''}. "
+                f"Complete it manually in the browser window, then resume this task."
+            )
+        if data.get("login_required"):
+            return "This application requires logging in. Log in manually in the browser window, then resume this task."
+        return None
+
+    if tool == "application.fill":
+        needs = data.get("needs_user_input") or []
+        if needs:
+            labels = ", ".join(f.get("label") or f.get("field_identifier") or f"field #{f.get('id')}" for f in needs)
+            application_id = needs[0].get("application_id")
+            return (
+                f"{len(needs)} field(s) need your input before this application can continue: {labels}. "
+                f"Answer each via POST /applications/{application_id}/fields/{{field_id}}/input "
+                f"(salary/authorization/relocation-style questions are never guessed), then resume this task."
+            )
+        return None
+
+    return None
+
+
+# application.analyze_page's blocker (CAPTCHA/login) genuinely needs a
+# fresh look at the live page, so it's left PENDING to retry itself.
+# application.fill's blocker (a field needing an answer) is different --
+# Step 5's fill() re-scans the whole page from scratch on every call, so
+# re-running it doesn't recognize a field a human already answered via
+# the separate provide_user_input endpoint the way GET .../review does.
+# Its step is left COMPLETED; resuming moves on to review/submit instead
+# of re-running fill.
+RETRY_SAME_STEP_ON_BLOCK = frozenset({"application.analyze_page"})
+
+
 def _resolve_placeholder(value, prior_result: dict | None):
     if not isinstance(value, str) or not value.startswith("$PREV_"):
         return value
@@ -174,6 +220,16 @@ async def run_task(db: Session, task: AgentTask, max_steps: int | None = None) -
 
         result_data = await _execute_one_step(db, task, step, prior_result)
         executed_this_call += 1
+
+        if result_data is not None:
+            blocking_message = _blocking_reason(step.tool, result_data)
+            if blocking_message:
+                db.refresh(step)
+                if step.tool in RETRY_SAME_STEP_ON_BLOCK:
+                    task_manager.update_step(db, step, AgentPlanStepStatus.PENDING)
+                task_manager.update_task_status(db, task, AgentTaskStatus.WAITING_FOR_USER_INPUT)
+                task_manager.append_event(db, task.id, AgentEventType.USER_INPUT_REQUIRED, blocking_message, tool=step.tool)
+                return task
 
         if result_data is None:
             db.refresh(step)

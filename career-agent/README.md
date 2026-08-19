@@ -7,6 +7,12 @@ An AI-powered job application agent, built step by step.
   research, certifications, achievements) with an evidence system that
   prevents any future AI layer from inventing experience you don't have.
   See [`docs/career-profile-schema.md`](docs/career-profile-schema.md).
+- **Step 1b — Resume Upload (Profile Parser)**: upload a PDF/text resume
+  and AI extracts skills/experience/education/projects/etc into the
+  shape above -- but nothing is written until you explicitly confirm it,
+  and everything confirmed lands `verified: false` regardless of what
+  the AI extracted, exactly like every other AI-touched fact in this
+  system.
 - **Step 2 — Job Ingestion, Analysis & Matching**: paste a job URL or
   description in, get a deterministic, explainable fit score out. See
   [`docs/job-matching-schema.md`](docs/job-matching-schema.md).
@@ -331,6 +337,35 @@ Full Step 1 endpoint list: `GET/POST/PUT /profile`, `GET /profile/export`,
 `POST /profile/import`, and `GET/POST` for `/skills`, `/education`,
 `/experience`, `/projects`, `/certifications`, `/achievements`,
 `/research`, `/evidence`.
+
+## 7a. Step 1b: resume upload (Profile Parser)
+
+Upload a resume (PDF or plain text) -- this only ever creates a
+`ResumeImport` row for you to review; nothing touches the Career Profile
+yet:
+
+```bash
+curl -X POST http://localhost:8000/profile/resume/upload -F "file=@resume.pdf" | python3 -m json.tool
+```
+
+Review what was extracted, then confirm (writes everything as
+`verified: false`, attaching to your existing profile if you have one,
+or creating a new one if the resume had a name/email/title and you
+don't) or reject (discards it, nothing written):
+
+```bash
+curl http://localhost:8000/profile/resume/imports/1 | python3 -m json.tool
+curl -X POST http://localhost:8000/profile/resume/imports/1/confirm
+curl -X POST http://localhost:8000/profile/resume/imports/1/reject
+```
+
+Requires `OPENAI_API_KEY` (same extraction pipeline pattern as Step 2's
+job analysis). Only `.pdf`, `.txt`, and `.md` are supported -- other
+formats are rejected with a clear error before any AI call happens.
+Full endpoint list: `POST /profile/resume/upload`,
+`GET /profile/resume/imports`, `GET /profile/resume/imports/{id}`,
+`POST /profile/resume/imports/{id}/confirm`,
+`POST /profile/resume/imports/{id}/reject`.
 
 ## 7b. Step 2: jobs, analysis, matching
 
@@ -959,12 +994,19 @@ curl -X POST http://localhost:8000/agent/chat \
   "id": 1, "status": "completed",
   "objective": "Find and rank jobs matching the request.",
   "final_result": {
-    "completed": ["search_jobs", "rank_jobs"],
+    "completed": ["discover_new_jobs", "search_jobs", "rank_jobs"],
     "job_ids": [12, 8, 41, 3, 19],
-    "summary": "OBJECTIVE: Find and rank jobs matching the request.\n\nCOMPLETED:\n  ✓ search_jobs\n  ✓ rank_jobs\n\nAPPROVAL REQUIRED:\n  (none)"
+    "summary": "OBJECTIVE: Find and rank jobs matching the request.\n\nCOMPLETED:\n  ✓ discover_new_jobs\n  ✓ search_jobs\n  ✓ rank_jobs\n\nAPPROVAL REQUIRED:\n  (none)"
   }
 }
 ```
+
+"Find jobs" actually finds some: `discover_new_jobs` runs Step 2b
+first (dedup-aware, so this is safe to do on every search), *then*
+`search_jobs` looks across the now-current database. `rank_jobs` skips
+anything below a 70% deterministic match score by default (your Step 7
+goal's `minimum_match_score` overrides this if you've set one) -- a weak
+match never reaches `cv.generate`.
 
 A request that implies real, persistent actions (preparing applications)
 still runs on its own -- generating a CV/cover letter and creating an
@@ -976,20 +1018,36 @@ curl -X POST http://localhost:8000/agent/chat \
   -d '{"message": "Find 3 strong ML jobs and prepare applications"}'
 ```
 
-But anything that leaves this machine -- an actual submit click, an
-external message -- always stops and waits, no matter what:
+"Submit application 42" drives the *entire* browser sequence itself --
+open the browser, detect CAPTCHA/login, fill known-safe fields, review,
+then stop for approval right before the one irreversible click:
 
 ```bash
 curl -X POST http://localhost:8000/agent/chat \
   -H "Content-Type: application/json" \
   -d '{"message": "Submit application 42"}'
-# {"status": "waiting_for_approval", ...}
+# {"status": "waiting_for_approval", ...}   -- start/analyze/fill/review all ran already
 
 curl http://localhost:8000/agent/tasks/2/approvals
 # [{"id": 7, "status": "pending", "description": "Approve: submit_1 (application.submit)", ...}]
 
 curl -X POST http://localhost:8000/agent/approvals/7/approve
 # approving immediately resumes the task -- no separate /resume call needed
+```
+
+If a CAPTCHA or login page is detected, or a field like salary needs a
+human answer, the task pauses at `waiting_for_user_input` instead --
+with a clear message telling you exactly what to do (solve it in the
+browser window, or `POST /applications/{id}/fields/{field_id}/input`)
+and `POST /agent/tasks/{id}/resume` once you have:
+
+```bash
+curl http://localhost:8000/agent/tasks/2/events | python3 -c "import json,sys; [print(e['message']) for e in json.load(sys.stdin)]"
+# ...
+# 3 field(s) need your input before this application can continue: Expected Salary. Answer each via POST /applications/42/fields/{field_id}/input ...
+
+curl -X POST http://localhost:8000/applications/42/fields/10/input -d '{"value": "$140,000"}'
+curl -X POST http://localhost:8000/agent/tasks/2/resume
 ```
 
 Rejecting instead just skips that step and the task still completes
@@ -1055,7 +1113,7 @@ User request
 
 `backend/app/agent/`:
 
-- **tool_registry.py** / **tools/*.py** -- ~44 tools, one thin wrapper
+- **tool_registry.py** / **tools/*.py** -- ~46 tools, one thin wrapper
   per Steps-1-7 capability (`jobs.search`, `cv.generate`,
   `application.submit`, `intelligence.recommendations`, ...). Each
   declares a pydantic input schema, a permission (`read_only` / `write`
@@ -1225,7 +1283,7 @@ across sources), orchestration's per-source error isolation (one source
 failing never blocks the others), goal-over-profile query precedence,
 and the API endpoints.
 
-`tests/test_agent.py` covers Step 8's 68 tests: the tool registry (no
+`tests/test_agent.py` covers Step 8's 73 tests: the tool registry (no
 duplicate names, every tool has a schema), the approval policy (LOW
 never gates, MEDIUM only for the always-listed tools, HIGH always gates
 even if a caller forgot to declare it), the full task/plan/event/
@@ -1242,6 +1300,30 @@ malicious arguments schema-rejected, expired approvals can't be
 approved, duplicate submissions prevented, cancelling a task closes its
 open browser session), every API endpoint, and a synthetic end-to-end
 prepare-then-approve-then-submit workflow that never leaves `DRY_RUN`.
+Two tests drive the *entire* `application.submit` browser sequence
+against real local Playwright fixtures (`test_application.html`,
+`test_application_captcha.html`) rather than mocking it away: one proves
+a genuine salary field correctly pauses the task and resuming after
+answering it via the normal Step 5 endpoint reaches the approval gate;
+the other proves a detected CAPTCHA pauses cleanly and re-checks itself
+on resume rather than being solved, skipped, or silently passed through
+-- both run through the `client` TestClient throughout (never a bare
+`await agent_module...` call), since a Playwright session opened on one
+event loop and closed from another hangs forever, a real hazard this
+suite hit once while writing these tests and fixed by following the
+same pattern `test_browser_application_e2e.py` already established.
+
+`tests/test_resume_import.py` covers Step 1b: text extraction (PDF via
+`pypdf`, plain text, rejecting unsupported formats and unreadable files
+*before* ever calling the AI), parsing with the OpenAI call mocked
+(matching `test_cv_customization.py`'s pattern), confirming into a new
+profile vs. an existing one, refusing to confirm when there's neither a
+profile nor enough contact info to create one, confirming twice
+(rejected), every extracted row landing `verified: false` with no
+exceptions, rejecting an import writes nothing at all, every API
+endpoint, and the two agent tools (`career.confirm_resume_import`
+always requires approval, and actually running it through the agent
+still produces unverified rows).
 
 ## 9. Frontend
 
@@ -1307,7 +1389,7 @@ career-agent/
 │   ├── app/
 │   │   ├── main.py               FastAPI app, router registration, logging config
 │   │   ├── config.py              Settings (incl. OLLAMA_BASE_URL, OLLAMA_MODEL, COVER_LETTER_*)
-│   │   ├── api/                   One router per resource (incl. jobs.py, cvs.py, applications.py, agent.py)
+│   │   ├── api/                   One router per resource (incl. jobs.py, cvs.py, applications.py, agent.py, resume_import.py)
 │   │   ├── models/                SQLAlchemy models + shared enums
 │   │   ├── schemas/                Pydantic Create/Update/Read schemas
 │   │   ├── services/
@@ -1335,7 +1417,8 @@ career-agent/
 │   │   │   ├── export_service.py          Step 6: CSV/JSON application export
 │   │   │   ├── recommendation_engine.py   Step 7: the only writer of Recommendation rows
 │   │   │   ├── goal_service.py            Step 7: UserJobSearchGoal CRUD + progress comparison
-│   │   │   └── discovery_service.py       Step 2b: builds the search query, runs each source, logs a DiscoveryRun
+│   │   │   ├── discovery_service.py       Step 2b: builds the search query, runs each source, logs a DiscoveryRun
+│   │   │   └── resume_import_service.py   Step 1b: extract -> AI parse -> pending review -> confirm (unverified) or reject
 │   │   ├── cli.py                         Step 6: `python -m app.cli backup`
 │   │   ├── intelligence/                  Step 7: deterministic analyzers (no LLM except explainer/interview_analyzer)
 │   │   │   ├── confidence.py              Small-sample-protected confidence scoring
@@ -1379,11 +1462,13 @@ career-agent/
 │   │   │   ├── interview_prep_prompts.py    Step 7 prompts (questions + draft answers)
 │   │   │   ├── interview_prep_outputs.py    Step 7 LLM output schemas
 │   │   │   ├── recommendation_prompts.py    Step 7 prompt (evidence -> explanation)
-│   │   │   └── recommendation_outputs.py    Step 7 LLM output schema
+│   │   │   ├── recommendation_outputs.py    Step 7 LLM output schema
+│   │   │   ├── resume_parse_prompts.py      Step 1b prompt (extract, never invent)
+│   │   │   └── resume_parse_outputs.py      Step 1b LLM output schema
 │   │   ├── scripts/
 │   │   │   └── analyze_job.py     Manual end-to-end demo script (Step 2)
 │   │   ├── agent/                         Step 8: orchestrator over Steps 1-7, no reimplementation
-│   │   │   ├── tool_registry.py           ~44 ToolSpecs (schema/permission/risk/handler)
+│   │   │   ├── tool_registry.py           ~46 ToolSpecs (schema/permission/risk/handler)
 │   │   │   ├── tools/                     One module per domain; handlers call existing services/routers
 │   │   │   ├── tool_router.py             Validates args, invokes, normalizes {success,data,warnings,errors}
 │   │   │   ├── planner.py                 Deterministic intent regexes + LLM classification fallback + plan templates

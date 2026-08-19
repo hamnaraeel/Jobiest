@@ -21,6 +21,7 @@ ALWAYS_REQUIRES_APPROVAL: frozenset[str] = frozenset({
     "application.submit",
     "career.update_profile",
     "career.update_goals",
+    "career.confirm_resume_import",
     "application.accept_offer",
     "message.send",
 })

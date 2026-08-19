@@ -86,9 +86,16 @@ async def jobs_match(db: Session, args: JobIdArgs) -> dict:
     return {"score": match.overall_score, "recommendation": match.recommendation.value, "job_id": job.id}
 
 
+DEFAULT_MIN_MATCH_SCORE = 70
+
+
 class JobsRankArgs(BaseModel):
     job_ids: list[int] = Field(default_factory=list, max_length=50, description="Empty is valid -- means the search this feeds from found nothing.")
     top_n: int | None = Field(None, ge=1, description="Trim the ranked result to this many jobs.")
+    min_match_score: int | None = Field(
+        DEFAULT_MIN_MATCH_SCORE, ge=0, le=100,
+        description="Jobs below this deterministic match score are skipped, not ranked. Pass null to disable filtering entirely.",
+    )
 
 
 async def jobs_rank(db: Session, args: JobsRankArgs) -> dict:
@@ -97,7 +104,9 @@ async def jobs_rank(db: Session, args: JobsRankArgs) -> dict:
     into one ranked list. Each sub-step is the same function
     jobs.analyze/jobs.match call; a job that fails analysis (e.g. no
     OPENAI_API_KEY configured) is skipped with a note, not fatal to the
-    rest of the batch."""
+    rest of the batch. A job that analyzes fine but scores below
+    min_match_score is also skipped -- deliberately *before* ranking, so
+    a weak match never reaches cv.generate downstream."""
 
     profile = get_default_profile(db)
     ranked = []
@@ -116,9 +125,14 @@ async def jobs_rank(db: Session, args: JobsRankArgs) -> dict:
             skipped.append({"job_id": job_id, "reason": str(exc)})
             continue
 
+        match_score = job.match.overall_score if job.match else None
+        if args.min_match_score is not None and match_score is not None and match_score < args.min_match_score:
+            skipped.append({"job_id": job_id, "reason": f"Match score {match_score}% is below the {args.min_match_score}% threshold."})
+            continue
+
         strategy = build_job_strategy(db, job, profile)
         ranked.append({
-            "job_id": job.id, "title": job.title, "company": job.company,
+            "job_id": job.id, "title": job.title, "company": job.company, "match_score": match_score,
             "priority_score": strategy.priority.score, "opportunity_score": strategy.opportunity.score,
             "reasons": strategy.priority.reasons,
         })
@@ -148,7 +162,7 @@ register(ToolSpec(
     side_effects=["creates_or_updates_job_match"], handler=jobs_match,
 ))
 register(ToolSpec(
-    name="jobs.rank", description="Analyze+match (if not already done) then rank a set of jobs by Step 7's priority score (highest first). Optionally trims to top_n.",
+    name="jobs.rank", description="Analyze+match (if not already done) then rank a set of jobs by Step 7's priority score (highest first). Skips jobs below min_match_score (default 70) and optionally trims to top_n.",
     input_schema=JobsRankArgs, permission=ToolPermission.WRITE, risk=ToolRiskLevel.MEDIUM,
     side_effects=["creates_job_requirements", "creates_or_updates_job_match"], handler=jobs_rank,
 ))

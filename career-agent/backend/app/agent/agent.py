@@ -36,7 +36,7 @@ async def handle_chat_message(db: Session, message: str, previous_task_id: int |
     used_llm = planner.detect_intent_deterministic(message) is None
 
     try:
-        planned = planner.plan_from_message(message, previous_task)
+        planned = planner.plan_from_message(db, message, previous_task)
     except PlanningError as exc:
         task_manager.update_task_status(db, task, AgentTaskStatus.WAITING_FOR_USER_INPUT, error_message=str(exc))
         task_manager.append_event(db, task.id, AgentEventType.USER_INPUT_REQUIRED, str(exc), metadata={"used_llm": used_llm})

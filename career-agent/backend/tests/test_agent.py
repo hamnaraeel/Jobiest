@@ -4,6 +4,7 @@ adds) -- the underlying Steps 1-7 services it calls are already covered
 by their own test files, so AI-backed generation is exercised here only
 at the boundary (mocked), not re-tested end to end."""
 
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -217,8 +218,8 @@ def test_extract_parameters_never_invents_a_count():
 # --- 7. Plan building / validation ----------------------------------------
 
 
-def test_build_plan_references_only_real_tools():
-    planned = planner.build_plan("job_search", planner.IntentParameters(), None)
+def test_build_plan_references_only_real_tools(db_session):
+    planned = planner.build_plan(db_session, "job_search", planner.IntentParameters(), None)
     for step in planned.steps:
         assert get_tool(step["tool"]) is not None
 
@@ -459,7 +460,12 @@ async def test_security_submission_never_executes_without_approval(db_session):
     # Deliberately built via planner, which applies permissions.requires_approval() --
     # simulates the real path rather than hand-authoring a bypass.
     planned = planner._plan_application_submission(planner.IntentParameters(application_id=999), None)
-    assert planned.steps[0]["requires_approval"] is True
+    by_tool = {s["tool"]: s for s in planned.steps}
+    assert by_tool["application.submit"]["requires_approval"] is True
+    # The browser steps leading up to it run on their own -- only the
+    # final, irreversible click is gated.
+    assert by_tool["application.start"]["requires_approval"] is False
+    assert by_tool["application.fill"]["requires_approval"] is False
 
 
 @pytest.mark.asyncio
@@ -702,3 +708,142 @@ async def test_end_to_end_prepare_and_submit_workflow(db_session, rich_profile, 
     from app.models.application import Application
     application = db_session.get(Application, application_id)
     assert application.status.value != "submitted" or task.status == AgentTaskStatus.COMPLETED
+
+
+# --- Full browser-sequence orchestration (spec section 18, this session's fix) ---
+
+
+def test_application_submission_drives_the_full_browser_sequence(
+    client, db_session, rich_profile, make_analyzed_job, make_approved_cv, make_approved_cover_letter, fixture_url,
+):
+    """The plan the planner actually builds -- start -> analyze_page ->
+    fill -> review -> submit -- against a real local Playwright session
+    (no CAPTCHA/login on this fixture), proving the previously-missing
+    orchestration now genuinely drives the browser rather than jumping
+    straight to a submit that would fail with "no active browser
+    session". Driven through the `client` TestClient throughout (not a
+    bare `await agent_module...` call) -- Playwright sessions are bound
+    to the event loop that opened them, and only the TestClient's own
+    portal thread is safe to open/close them from consistently (see the
+    _close_leftover_browser_sessions fixture's own docstring below)."""
+
+    job = make_analyzed_job(title="ML Engineer", company="Acme")
+    cv = make_approved_cv(job_id=job.id, profile_id=rich_profile["profile"]["id"])
+    cl = make_approved_cover_letter(job_id=job.id, cv_version_id=cv.id, profile_id=rich_profile["profile"]["id"])
+    prepare = client.post(f"/jobs/{job.id}/apply", json={
+        "cv_version_id": cv.id, "cover_letter_id": cl.id, "application_url": fixture_url("test_application.html"),
+    })
+    application_id = prepare.json()["id"]
+
+    body = client.post("/agent/chat", json={"message": f"Submit application {application_id}"}).json()
+    task_id = body["id"]
+    steps = task_manager.list_steps(db_session, task_id)
+    assert [s.tool for s in steps] == ["application.start", "application.analyze_page", "application.fill", "application.review", "application.submit"]
+
+    # This fixture has a salary field, which -- correctly, per Step 5's
+    # own never-guess rule -- fill() leaves for a human, so the agent
+    # pauses right there rather than plowing on to review/submit.
+    assert body["status"] == "waiting_for_user_input"
+    assert steps[0].status == AgentPlanStepStatus.COMPLETED  # start
+    assert steps[1].status == AgentPlanStepStatus.COMPLETED  # analyze_page (no captcha/login here)
+    db_session.refresh(steps[2])
+    # fill() itself completed (it ran and reported what it found) -- Step 5's
+    # fill() re-scans the whole page from scratch, so unlike analyze_page's
+    # CAPTCHA check, re-running it wouldn't recognize an out-of-band answer;
+    # resuming instead moves on to review, which reads current field state.
+    assert steps[2].status == AgentPlanStepStatus.COMPLETED
+    events = task_manager.list_events(db_session, task_id)
+    assert any("Expected Salary" in e.message for e in events)
+
+    # A human answers the one sensitive field directly (never through the
+    # agent -- spec section 42) via the existing Step 5 endpoint, then resume.
+    salary_field = next(f for f in client.get(f"/applications/{application_id}/review").json()["fields"] if f["label"] == "Expected Salary")
+    client.post(f"/applications/{application_id}/fields/{salary_field['id']}/input", json={"value": "$140,000"})
+
+    resumed = client.post(f"/agent/tasks/{task_id}/resume").json()
+    assert resumed["status"] == "waiting_for_approval"
+
+    approval_id = client.get(f"/agent/tasks/{task_id}/approvals").json()[0]["id"]
+    client.post(f"/agent/approvals/{approval_id}/approve")
+    final = client.get(f"/agent/tasks/{task_id}").json()
+    assert final["status"] == "completed"
+
+
+def test_application_submission_pauses_cleanly_on_captcha(
+    client, db_session, rich_profile, make_analyzed_job, make_approved_cv, make_approved_cover_letter, fixture_url,
+):
+    """spec sections 22/74: a CAPTCHA must stop that application, never
+    be solved or bypassed. Confirms the task pauses with a clear message
+    and the blocking step stays re-attemptable (not silently skipped or
+    marked complete) rather than the agent barreling on to fill/submit."""
+
+    job = make_analyzed_job(title="ML Engineer", company="Acme")
+    cv = make_approved_cv(job_id=job.id, profile_id=rich_profile["profile"]["id"])
+    cl = make_approved_cover_letter(job_id=job.id, cv_version_id=cv.id, profile_id=rich_profile["profile"]["id"])
+    prepare = client.post(f"/jobs/{job.id}/apply", json={
+        "cv_version_id": cv.id, "cover_letter_id": cl.id, "application_url": fixture_url("test_application_captcha.html"),
+    })
+    application_id = prepare.json()["id"]
+
+    body = client.post("/agent/chat", json={"message": f"Submit application {application_id}"}).json()
+    task_id = body["id"]
+    assert body["status"] == "waiting_for_user_input"
+
+    steps = task_manager.list_steps(db_session, task_id)
+    start_step, analyze_step = steps[0], steps[1]
+    assert start_step.status == AgentPlanStepStatus.COMPLETED
+    assert analyze_step.status == AgentPlanStepStatus.PENDING  # left re-attemptable, not completed/skipped
+
+    events = task_manager.list_events(db_session, task_id)
+    assert any("CAPTCHA" in e.message for e in events)
+
+    # Resuming without the CAPTCHA actually being cleared re-checks the
+    # same step and correctly pauses again (fixture is static -- this
+    # proves the re-check logic runs, not that solving happened).
+    resumed = client.post(f"/agent/tasks/{task_id}/resume").json()
+    assert resumed["status"] == "waiting_for_user_input"
+    db_session.refresh(analyze_step)
+    assert analyze_step.status == AgentPlanStepStatus.PENDING
+
+
+# --- Score-threshold skip (this session's fix) -----------------------------
+
+
+@pytest.mark.asyncio
+async def test_jobs_rank_skips_jobs_below_min_match_score(db_session, rich_profile):
+    from app.models.job import Job
+    from app.models.job_match import JobMatch
+
+    strong = Job(title="ML Engineer", company="Acme", description="d")
+    weak = Job(title="ML Engineer", company="Beta", description="d")
+    db_session.add_all([strong, weak])
+    db_session.flush()
+    db_session.add(JobMatch(job_id=strong.id, overall_score=85, recommendation="apply", score_components={}, algorithm_version="v1"))
+    db_session.add(JobMatch(job_id=weak.id, overall_score=40, recommendation="skip", score_components={}, algorithm_version="v1"))
+    strong.extracted_at = weak.extracted_at = datetime.now(timezone.utc)
+    db_session.commit()
+
+    envelope, _ = await tool_router.invoke(db_session, "jobs.rank", {"job_ids": [strong.id, weak.id], "min_match_score": 70})
+    ranked_ids = envelope["data"]["ranked_job_ids"]
+    assert strong.id in ranked_ids
+    assert weak.id not in ranked_ids
+    assert any(s["job_id"] == weak.id and "below the 70%" in s["reason"] for s in envelope["data"]["skipped"])
+
+
+# --- Discovery wired into job_search (this session's fix) ------------------
+
+
+def test_job_search_plan_calls_discovery_before_search(db_session):
+    planned = planner._plan_job_search(db_session, planner.IntentParameters(keywords=["ML Engineer"]))
+    tools_in_order = [s["tool"] for s in planned.steps]
+    assert tools_in_order == ["discovery.run", "jobs.search", "jobs.rank"]
+    assert planned.steps[0]["arguments"]["keywords"] == ["ML Engineer"]
+
+
+def test_job_search_plan_respects_configured_goal_threshold(db_session):
+    from app.services import goal_service
+    goal_service.set_goal(db_session, {"minimum_match_score": 55})
+
+    planned = planner._plan_job_search(db_session, planner.IntentParameters())
+    rank_step = next(s for s in planned.steps if s["tool"] == "jobs.rank")
+    assert rank_step["arguments"]["min_match_score"] == 55

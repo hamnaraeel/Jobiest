@@ -503,3 +503,18 @@ class AgentApprovalStatus(str, enum.Enum):
     APPROVED = "approved"
     REJECTED = "rejected"
     EXPIRED = "expired"
+
+
+# --- Resume upload / parsing ("Profile Parser") ---
+
+
+class ResumeImportStatus(str, enum.Enum):
+    """A parsed resume is never live data on its own -- it's a proposal.
+    PENDING_REVIEW until a human explicitly confirms it (which writes
+    everything into the Career Profile as verified=False, spec-consistent
+    with Step 1's "nothing invented, nothing auto-verified" rule) or
+    rejects it (discarded, nothing written)."""
+
+    PENDING_REVIEW = "pending_review"
+    CONFIRMED = "confirmed"
+    REJECTED = "rejected"

@@ -33,6 +33,7 @@ from app.api import (
     profile,
     projects,
     research,
+    resume_import,
     skills,
     tracking,
 )
@@ -65,7 +66,7 @@ app = FastAPI(
         "input rather than guessed, and no submit button or external message is ever "
         "sent without explicit, separately-recorded user approval."
     ),
-    version="0.9.0",
+    version="0.10.0",
 )
 
 # Local-first only: allows the local React dev server (and any other
@@ -81,6 +82,7 @@ app.add_middleware(
 )
 
 app.include_router(profile.router)
+app.include_router(resume_import.router)
 app.include_router(skills.router)
 app.include_router(education.router)
 app.include_router(experience.router)

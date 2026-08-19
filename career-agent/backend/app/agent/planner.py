@@ -22,8 +22,21 @@ from app.agent.errors import PlanningError
 from app.agent.permissions import requires_approval
 from app.agent.prompts import INTENT_SYSTEM_PROMPT, IntentClassification, IntentParameters, build_intent_user_prompt
 from app.agent.tool_registry import get_tool
+from app.agent.tools.jobs import DEFAULT_MIN_MATCH_SCORE
 from app.ai.client import AIConfigurationError, OllamaResponseError, call_ollama_structured, get_ollama_client
 from app.models.agent import AgentTask
+from app.services import goal_service
+
+
+def _min_match_score(db: Session) -> int:
+    """The user's own configured minimum (Step 7 goal) if set, else the
+    flowchart's default of 70 -- never invented, just respects what's
+    already configured (or falls back sensibly if nothing is)."""
+
+    goal = goal_service.get_current_goal(db)
+    if goal and goal.minimum_match_score is not None:
+        return goal.minimum_match_score
+    return DEFAULT_MIN_MATCH_SCORE
 
 # --- parameter extraction (used by both the deterministic and LLM paths) ---
 
@@ -130,7 +143,20 @@ def _step(action: str, tool: str, arguments: dict | None = None) -> dict:
 # --- plan templates: one per intent, matching spec sections 16-18, 54-58 ---
 
 
-def _plan_job_search(params: IntentParameters) -> PlannedTask:
+def _plan_job_search(db: Session, params: IntentParameters) -> PlannedTask:
+    """"Find jobs" means actually go find some, not just filter what's
+    already stored -- discovery.run (Step 2b: Greenhouse/Lever/RemoteOK/
+    WWR/Adzuna/USAJobs) runs first, using the same keywords/locations,
+    so freshly-discovered jobs are in the database by the time
+    jobs.search runs. discovery.run is itself dedup-aware, so running it
+    on every search is safe -- it never creates duplicate Job rows."""
+
+    discovery_args = {}
+    if params.keywords:
+        discovery_args["keywords"] = params.keywords
+    if params.locations:
+        discovery_args["locations"] = params.locations
+
     search_args = {"limit": params.count or 20}
     if params.keywords:
         search_args["role"] = params.keywords[0]
@@ -140,27 +166,28 @@ def _plan_job_search(params: IntentParameters) -> PlannedTask:
         search_args["remote"] = True
 
     steps = [
+        _step("discover_new_jobs", "discovery.run", discovery_args),
         _step("search_jobs", "jobs.search", search_args),
-        _step("rank_jobs", "jobs.rank", {"job_ids": "$PREV_JOB_IDS", "top_n": params.count}),
+        _step("rank_jobs", "jobs.rank", {"job_ids": "$PREV_JOB_IDS", "top_n": params.count, "min_match_score": _min_match_score(db)}),
     ]
     return PlannedTask(intent="job_search", objective="Find and rank jobs matching the request.", steps=steps)
 
 
-def _plan_job_search_and_prepare(params: IntentParameters) -> PlannedTask:
-    plan = _plan_job_search(params)
+def _plan_job_search_and_prepare(db: Session, params: IntentParameters) -> PlannedTask:
+    plan = _plan_job_search(db, params)
     plan.intent = "job_search_and_prepare"
     plan.objective = "Find strong-match jobs and prepare tailored applications for the best ones."
     plan.steps.append(_step("prepare_applications", "application.prepare_batch", {"job_ids": "$PREV_RANKED_JOB_IDS"}))
     return plan
 
 
-def _plan_application_preparation(params: IntentParameters, previous_task: AgentTask | None) -> PlannedTask:
+def _plan_application_preparation(db: Session, params: IntentParameters, previous_task: AgentTask | None) -> PlannedTask:
     job_ids = [params.job_id] if params.job_id is not None else memory.resolve_previous_job_ids(previous_task, params.count)
     if not job_ids and not params.refers_to_previous_result:
         # No prior search to draw from -- rank whatever's currently shortlisted.
         steps = [
             _step("search_shortlisted_jobs", "jobs.search", {"status": "shortlisted", "limit": 50}),
-            _step("rank_jobs", "jobs.rank", {"job_ids": "$PREV_JOB_IDS", "top_n": params.count or 5}),
+            _step("rank_jobs", "jobs.rank", {"job_ids": "$PREV_JOB_IDS", "top_n": params.count or 5, "min_match_score": _min_match_score(db)}),
             _step("prepare_applications", "application.prepare_batch", {"job_ids": "$PREV_RANKED_JOB_IDS"}),
         ]
     else:
@@ -169,13 +196,30 @@ def _plan_application_preparation(params: IntentParameters, previous_task: Agent
 
 
 def _plan_application_submission(params: IntentParameters, previous_task: AgentTask | None) -> PlannedTask:
+    """Per application: open the browser, detect CAPTCHA/login (the
+    executor pauses cleanly and re-checks on resume if either is found --
+    see executor._blocking_reason), fill known-safe fields (pausing the
+    same way if anything needs an answer the agent must never guess),
+    review, then submit -- the one HIGH-risk, always-approval-gated step.
+    Mirrors spec section 18's own worked example exactly."""
+
     application_ids = [params.application_id] if params.application_id is not None else memory.resolve_previous_application_ids(previous_task, params.count)
     if not application_ids:
         raise PlanningError(
             "No specific applications were named and none were referenced from a previous task. "
             "Say which applications to submit, e.g. by id, or run 'prepare applications' first."
         )
-    steps = [_step(f"submit_application_{aid}", "application.submit", {"application_id": aid}) for aid in application_ids]
+
+    steps = []
+    for aid in application_ids:
+        args = {"application_id": aid}
+        steps += [
+            _step(f"start_browser_{aid}", "application.start", args),
+            _step(f"analyze_page_{aid}", "application.analyze_page", args),
+            _step(f"fill_application_{aid}", "application.fill", args),
+            _step(f"review_application_{aid}", "application.review", args),
+            _step(f"submit_application_{aid}", "application.submit", args),
+        ]
     return PlannedTask(intent="application_submission", objective=f"Submit {len(application_ids)} application(s).", steps=steps)
 
 
@@ -269,13 +313,13 @@ def _plan_cover_letter_generation(params: IntentParameters, previous_task: Agent
     return PlannedTask(intent="cover_letter_generation", objective="Generate tailored cover letter(s).", steps=steps)
 
 
-def build_plan(intent: str, parameters: IntentParameters, previous_task: AgentTask | None) -> PlannedTask:
+def build_plan(db: Session, intent: str, parameters: IntentParameters, previous_task: AgentTask | None) -> PlannedTask:
     if intent == "job_search":
-        return _plan_job_search(parameters)
+        return _plan_job_search(db, parameters)
     if intent == "job_search_and_prepare":
-        return _plan_job_search_and_prepare(parameters)
+        return _plan_job_search_and_prepare(db, parameters)
     if intent == "application_preparation":
-        return _plan_application_preparation(parameters, previous_task)
+        return _plan_application_preparation(db, parameters, previous_task)
     if intent == "application_submission":
         return _plan_application_submission(parameters, previous_task)
     if intent == "application_tracking":
@@ -301,9 +345,9 @@ def build_plan(intent: str, parameters: IntentParameters, previous_task: AgentTa
     raise PlanningError(f"No plan template for intent '{intent}'.")
 
 
-def plan_from_message(message: str, previous_task: AgentTask | None) -> PlannedTask:
+def plan_from_message(db: Session, message: str, previous_task: AgentTask | None) -> PlannedTask:
     detected = detect_intent_deterministic(message)
     if detected is None:
         detected = detect_intent_llm(message, previous_task)
     intent, parameters = detected
-    return build_plan(intent, parameters, previous_task)
+    return build_plan(db, intent, parameters, previous_task)
