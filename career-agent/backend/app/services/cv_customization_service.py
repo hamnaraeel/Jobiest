@@ -15,7 +15,7 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.ai.client import get_openai_client
+from app.ai.client import get_ai_client, get_ai_model
 from app.ai.cv_prompts import (
     CV_BULLET_REWRITE_PROMPT_V1,
     CV_PLAN_PROMPT_V1,
@@ -376,11 +376,12 @@ def generate_cv(db: Session, job: Job, template_name: str = "ats/ml_engineer", c
     match_score_before = existing_match.overall_score
 
     settings = get_settings()
-    client = get_openai_client()
+    client = get_ai_client()
+    model = get_ai_model()
     ctx = get_relevant_career_data(db, profile.id)
 
-    plan = generate_cv_plan(client, settings.openai_model, job, ctx)
-    output, sanitized, issues = generate_cv_content(client, settings.openai_model, job, plan, ctx)
+    plan = generate_cv_plan(client, model, job, ctx)
+    output, sanitized, issues = generate_cv_content(client, model, job, plan, ctx)
 
     summary_has_unsupported_claim = any(i.code == "UNSUPPORTED_TECHNOLOGY_IN_SUMMARY" for i in issues)
     final_summary = _fallback_summary(plan, ctx) if summary_has_unsupported_claim else output.summary

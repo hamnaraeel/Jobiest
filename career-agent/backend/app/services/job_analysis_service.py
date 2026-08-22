@@ -11,10 +11,9 @@ from pydantic import ValidationError
 from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
-from app.ai.client import get_openai_client
+from app.ai.client import get_ai_client, get_ai_model
 from app.ai.prompts import JOB_ANALYSIS_PROMPT_V1
 from app.ai.structured_outputs import JobAnalysisResult
-from app.config import get_settings
 from app.models.enums import JobStatus, RequirementCategory, RequirementImportance
 from app.models.job import Job
 from app.models.job_requirement import JobRequirement
@@ -146,9 +145,8 @@ def analyze_job(db: Session, job: Job) -> Job:
             "could be fetched, before requesting analysis."
         )
 
-    settings = get_settings()
-    client = get_openai_client()
-    result = call_job_analysis(client, settings.openai_model, job.description)
+    client = get_ai_client()
+    result = call_job_analysis(client, get_ai_model(), job.description)
 
     if not job.title and result.job_title:
         job.title = result.job_title.strip()

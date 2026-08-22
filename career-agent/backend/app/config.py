@@ -8,6 +8,17 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
 
+    # Free alternative to OpenAI for Steps 2-3/1b (JD analysis, matching, CV
+    # customization, resume parsing): Groq hosts full-size open models on
+    # its own GPUs behind an OpenAI-compatible endpoint, so the same
+    # `.chat.completions.parse()` structured-output calls work unmodified
+    # -- just point the client at Groq's base_url. Set AI_PROVIDER=groq to
+    # use it in place of OpenAI for those four services.
+    ai_provider: str = "openai"
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+
     cv_max_pages: int = 1
     cv_storage_dir: str = "../data/cvs"
     pdflatex_path: str = "pdflatex"

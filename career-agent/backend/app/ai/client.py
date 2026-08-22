@@ -27,6 +27,37 @@ def get_openai_client() -> OpenAI:
     return OpenAI(api_key=settings.openai_api_key)
 
 
+def get_groq_client() -> OpenAI:
+    """Groq hosts full-size open models behind an OpenAI-compatible
+    endpoint, so the OpenAI SDK works unmodified -- just a different
+    base_url and key. Free tier; used in place of OpenAI when
+    AI_PROVIDER=groq (see get_ai_client)."""
+    settings = get_settings()
+    if not settings.groq_api_key:
+        raise AIConfigurationError(
+            "GROQ_API_KEY is not set. AI_PROVIDER=groq requires a Groq API key -- create "
+            "a free one at https://console.groq.com and set GROQ_API_KEY in your .env."
+        )
+    return OpenAI(api_key=settings.groq_api_key, base_url=settings.groq_base_url)
+
+
+def get_ai_client() -> OpenAI:
+    """Steps 2-3/1b (JD analysis, matching, CV customization, resume
+    parsing) call this instead of get_openai_client() directly, so
+    AI_PROVIDER is the one setting that decides which OpenAI-compatible
+    backend they hit. Pair with get_ai_model() for the matching model
+    name."""
+    settings = get_settings()
+    if settings.ai_provider == "groq":
+        return get_groq_client()
+    return get_openai_client()
+
+
+def get_ai_model() -> str:
+    settings = get_settings()
+    return settings.groq_model if settings.ai_provider == "groq" else settings.openai_model
+
+
 class OllamaResponseError(RuntimeError):
     """Ollama reached, but its response didn't parse as valid structured
     output -- distinct from AIConfigurationError (which means Ollama or
