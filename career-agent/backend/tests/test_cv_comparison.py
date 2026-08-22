@@ -151,12 +151,12 @@ def test_generate_list_get_and_approve_cv(client, rich_profile, db_session):
     plan_output, content_output = _plan_and_content(rich_profile)
 
     import app.services.cv_customization_service as svc_mod
-    original = svc_mod.get_openai_client
-    svc_mod.get_openai_client = lambda: _fake_client(plan_output, content_output)
+    original = svc_mod.get_ai_client
+    svc_mod.get_ai_client = lambda: _fake_client(plan_output, content_output)
     try:
         resp = client.post(f"/jobs/{job_id}/cv/generate", json={"compile_pdf": False})
     finally:
-        svc_mod.get_openai_client = original
+        svc_mod.get_ai_client = original
 
     assert resp.status_code == 201
     cv = resp.json()
@@ -204,12 +204,12 @@ def test_download_without_pdf_returns_404(client, rich_profile, db_session):
 
     plan_output, content_output = _plan_and_content(rich_profile)
     import app.services.cv_customization_service as svc_mod
-    original = svc_mod.get_openai_client
-    svc_mod.get_openai_client = lambda: _fake_client(plan_output, content_output)
+    original = svc_mod.get_ai_client
+    svc_mod.get_ai_client = lambda: _fake_client(plan_output, content_output)
     try:
         resp = client.post(f"/jobs/{job.id}/cv/generate", json={"compile_pdf": False})
     finally:
-        svc_mod.get_openai_client = original
+        svc_mod.get_ai_client = original
 
     cv_id = resp.json()["id"]
     download_resp = client.get(f"/cvs/{cv_id}/download")

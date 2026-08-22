@@ -74,7 +74,7 @@ def test_call_job_analysis_raises_when_no_parsed_output():
 
 
 def test_analyze_job_extracts_requirements_and_backfills_job_fields(db_session, mocker):
-    mocker.patch("app.services.job_analysis_service.get_openai_client", return_value=_fake_client(SAMPLE_ANALYSIS))
+    mocker.patch("app.services.job_analysis_service.get_ai_client", return_value=_fake_client(SAMPLE_ANALYSIS))
 
     job = Job(description="raw description text")
     db_session.add(job)
@@ -102,7 +102,7 @@ def test_analyze_job_extracts_requirements_and_backfills_job_fields(db_session, 
 
 
 def test_preferred_skills_never_marked_required(db_session, mocker):
-    mocker.patch("app.services.job_analysis_service.get_openai_client", return_value=_fake_client(SAMPLE_ANALYSIS))
+    mocker.patch("app.services.job_analysis_service.get_ai_client", return_value=_fake_client(SAMPLE_ANALYSIS))
 
     job = Job(description="raw description text")
     db_session.add(job)
@@ -114,7 +114,7 @@ def test_preferred_skills_never_marked_required(db_session, mocker):
 
 
 def test_analyze_job_reanalysis_replaces_old_requirements(db_session, mocker):
-    mocker.patch("app.services.job_analysis_service.get_openai_client", return_value=_fake_client(SAMPLE_ANALYSIS))
+    mocker.patch("app.services.job_analysis_service.get_ai_client", return_value=_fake_client(SAMPLE_ANALYSIS))
 
     job = Job(description="raw description text")
     db_session.add(job)

@@ -72,7 +72,7 @@ def test_full_step_1_to_7_workflow(
         ])],
         projects=[ProjectContentOutput(project_id=project["id"], bullets=[])],
     )
-    mocker.patch("app.services.cv_customization_service.get_openai_client", return_value=_fake_openai_client(plan_output, content_output))
+    mocker.patch("app.services.cv_customization_service.get_ai_client", return_value=_fake_openai_client(plan_output, content_output))
     cv_resp = client.post(f"/jobs/{job.id}/cv/generate")
     assert cv_resp.status_code == 201, cv_resp.text
     cv_id = cv_resp.json()["id"]

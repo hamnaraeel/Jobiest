@@ -235,12 +235,12 @@ def test_generate_cv_creates_version_with_scores_and_traceability(client, rich_p
     fake_client = _fake_client(plan_output, content_output)
 
     import app.services.cv_customization_service as svc_mod
-    original = svc_mod.get_openai_client
-    svc_mod.get_openai_client = lambda: fake_client
+    original = svc_mod.get_ai_client
+    svc_mod.get_ai_client = lambda: fake_client
     try:
         cv = svc.generate_cv(db_session, job, compile_pdf_flag=False)
     finally:
-        svc_mod.get_openai_client = original
+        svc_mod.get_ai_client = original
 
     assert cv.version_number == 1
     assert cv.version_name.endswith("V1")
@@ -254,17 +254,17 @@ def test_generate_cv_versioning_never_overwrites(client, rich_profile, db_sessio
     job = make_analyzed_job(requirements=_basic_requirements())
 
     import app.services.cv_customization_service as svc_mod
-    original = svc_mod.get_openai_client
+    original = svc_mod.get_ai_client
 
     plan_output, content_output = _plan_and_content_for(rich_profile)
-    svc_mod.get_openai_client = lambda: _fake_client(plan_output, content_output)
+    svc_mod.get_ai_client = lambda: _fake_client(plan_output, content_output)
     try:
         cv1 = svc.generate_cv(db_session, job, compile_pdf_flag=False)
         plan_output2, content_output2 = _plan_and_content_for(rich_profile)
-        svc_mod.get_openai_client = lambda: _fake_client(plan_output2, content_output2)
+        svc_mod.get_ai_client = lambda: _fake_client(plan_output2, content_output2)
         cv2 = svc.generate_cv(db_session, job, compile_pdf_flag=False)
     finally:
-        svc_mod.get_openai_client = original
+        svc_mod.get_ai_client = original
 
     assert cv1.id != cv2.id
     assert cv1.version_number == 1

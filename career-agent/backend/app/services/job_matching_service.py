@@ -14,10 +14,9 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.ai.client import AIConfigurationError, get_openai_client
+from app.ai.client import AIConfigurationError, get_ai_client, get_ai_model
 from app.ai.prompts import JOB_MATCH_EXPLANATION_PROMPT_V1
 from app.ai.structured_outputs import MatchExplanationResult
-from app.config import get_settings
 from app.models.achievement import Achievement
 from app.models.certification import Certification
 from app.models.education import Education
@@ -459,8 +458,8 @@ def _generate_explanation(
 ) -> str:
     fallback = _fallback_reasoning_summary(job, score, recommendation, strengths, weaknesses, critical_gaps)
     try:
-        settings = get_settings()
-        client = get_openai_client()
+        client = get_ai_client()
+        model = get_ai_model()
     except AIConfigurationError:
         return fallback
 
@@ -470,7 +469,7 @@ def _generate_explanation(
     )
     try:
         completion = client.chat.completions.parse(
-            model=settings.openai_model,
+            model=model,
             messages=[
                 {"role": "system", "content": JOB_MATCH_EXPLANATION_PROMPT_V1},
                 {"role": "user", "content": payload},

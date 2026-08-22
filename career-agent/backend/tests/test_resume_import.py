@@ -65,7 +65,7 @@ def test_extract_text_rejects_too_short_content():
 
 
 def test_parse_resume_creates_pending_review_import(db_session, mocker):
-    mocker.patch("app.services.resume_import_service.get_openai_client", return_value=_fake_openai_client(_sample_parsed()))
+    mocker.patch("app.services.resume_import_service.get_ai_client", return_value=_fake_openai_client(_sample_parsed()))
     resume_import = svc.parse_resume(db_session, "resume.txt", b"A career summary. " * 20)
     assert resume_import.status == ResumeImportStatus.PENDING_REVIEW
     assert resume_import.parsed_data["full_name"] == "Jordan Rivera"
@@ -74,20 +74,20 @@ def test_parse_resume_creates_pending_review_import(db_session, mocker):
 
 def test_parse_resume_warns_when_name_or_email_missing(db_session, mocker):
     incomplete = _sample_parsed(full_name=None, email=None)
-    mocker.patch("app.services.resume_import_service.get_openai_client", return_value=_fake_openai_client(incomplete))
+    mocker.patch("app.services.resume_import_service.get_ai_client", return_value=_fake_openai_client(incomplete))
     resume_import = svc.parse_resume(db_session, "resume.txt", b"A career summary. " * 20)
     assert any("email" in w.lower() for w in resume_import.warnings)
     assert any("name" in w.lower() for w in resume_import.warnings)
 
 
 def test_parse_resume_surfaces_missing_api_key_clearly(db_session, mocker):
-    mocker.patch("app.services.resume_import_service.get_openai_client", side_effect=AIConfigurationError("no key"))
+    mocker.patch("app.services.resume_import_service.get_ai_client", side_effect=AIConfigurationError("no key"))
     with pytest.raises(AIConfigurationError):
         svc.parse_resume(db_session, "resume.txt", b"A career summary. " * 20)
 
 
 def test_parse_resume_rejects_bad_file_before_ever_calling_ai(db_session, mocker):
-    ai_mock = mocker.patch("app.services.resume_import_service.get_openai_client")
+    ai_mock = mocker.patch("app.services.resume_import_service.get_ai_client")
     with pytest.raises(svc.ResumeImportError):
         svc.parse_resume(db_session, "resume.docx", b"A" * 200)
     ai_mock.assert_not_called()
@@ -97,7 +97,7 @@ def test_parse_resume_rejects_bad_file_before_ever_calling_ai(db_session, mocker
 
 
 def test_confirm_import_creates_new_profile_all_unverified(db_session, mocker):
-    mocker.patch("app.services.resume_import_service.get_openai_client", return_value=_fake_openai_client(_sample_parsed()))
+    mocker.patch("app.services.resume_import_service.get_ai_client", return_value=_fake_openai_client(_sample_parsed()))
     resume_import = svc.parse_resume(db_session, "resume.txt", b"A career summary. " * 20)
 
     profile = svc.confirm_import(db_session, resume_import)
@@ -115,7 +115,7 @@ def test_confirm_import_creates_new_profile_all_unverified(db_session, mocker):
 
 
 def test_confirm_import_attaches_to_existing_profile(db_session, mocker, profile):
-    mocker.patch("app.services.resume_import_service.get_openai_client", return_value=_fake_openai_client(_sample_parsed()))
+    mocker.patch("app.services.resume_import_service.get_ai_client", return_value=_fake_openai_client(_sample_parsed()))
     resume_import = svc.parse_resume(db_session, "resume.txt", b"A career summary. " * 20)
 
     result = svc.confirm_import(db_session, resume_import)
@@ -125,7 +125,7 @@ def test_confirm_import_attaches_to_existing_profile(db_session, mocker, profile
 
 def test_confirm_import_without_profile_or_contact_info_raises(db_session, mocker):
     incomplete = _sample_parsed(full_name=None, email=None)
-    mocker.patch("app.services.resume_import_service.get_openai_client", return_value=_fake_openai_client(incomplete))
+    mocker.patch("app.services.resume_import_service.get_ai_client", return_value=_fake_openai_client(incomplete))
     resume_import = svc.parse_resume(db_session, "resume.txt", b"A career summary. " * 20)
 
     with pytest.raises(svc.ResumeImportError):
@@ -133,7 +133,7 @@ def test_confirm_import_without_profile_or_contact_info_raises(db_session, mocke
 
 
 def test_confirm_already_confirmed_import_raises(db_session, mocker):
-    mocker.patch("app.services.resume_import_service.get_openai_client", return_value=_fake_openai_client(_sample_parsed()))
+    mocker.patch("app.services.resume_import_service.get_ai_client", return_value=_fake_openai_client(_sample_parsed()))
     resume_import = svc.parse_resume(db_session, "resume.txt", b"A career summary. " * 20)
     svc.confirm_import(db_session, resume_import)
     with pytest.raises(svc.ResumeImportError):
@@ -141,7 +141,7 @@ def test_confirm_already_confirmed_import_raises(db_session, mocker):
 
 
 def test_reject_import_discards_without_writing_anything(db_session, mocker, profile):
-    mocker.patch("app.services.resume_import_service.get_openai_client", return_value=_fake_openai_client(_sample_parsed()))
+    mocker.patch("app.services.resume_import_service.get_ai_client", return_value=_fake_openai_client(_sample_parsed()))
     resume_import = svc.parse_resume(db_session, "resume.txt", b"A career summary. " * 20)
 
     svc.reject_import(db_session, resume_import)
@@ -161,13 +161,13 @@ def test_api_upload_rejects_unsupported_file_type(client):
 
 
 def test_api_upload_returns_503_without_openai_key(client, mocker):
-    mocker.patch("app.services.resume_import_service.get_openai_client", side_effect=AIConfigurationError("no key"))
+    mocker.patch("app.services.resume_import_service.get_ai_client", side_effect=AIConfigurationError("no key"))
     resp = client.post("/profile/resume/upload", files={"file": ("resume.txt", b"A career summary. " * 20, "text/plain")})
     assert resp.status_code == 503
 
 
 def test_api_upload_list_get_confirm_flow(client, mocker):
-    mocker.patch("app.services.resume_import_service.get_openai_client", return_value=_fake_openai_client(_sample_parsed()))
+    mocker.patch("app.services.resume_import_service.get_ai_client", return_value=_fake_openai_client(_sample_parsed()))
     upload = client.post("/profile/resume/upload", files={"file": ("resume.txt", b"A career summary. " * 20, "text/plain")})
     assert upload.status_code == 201
     import_id = upload.json()["id"]
@@ -188,7 +188,7 @@ def test_api_get_missing_import_404s(client):
 
 
 def test_api_reject_flow(client, mocker):
-    mocker.patch("app.services.resume_import_service.get_openai_client", return_value=_fake_openai_client(_sample_parsed()))
+    mocker.patch("app.services.resume_import_service.get_ai_client", return_value=_fake_openai_client(_sample_parsed()))
     upload = client.post("/profile/resume/upload", files={"file": ("resume.txt", b"A career summary. " * 20, "text/plain")})
     import_id = upload.json()["id"]
 
@@ -203,7 +203,7 @@ def test_api_reject_flow(client, mocker):
 
 @pytest.mark.asyncio
 async def test_agent_list_resume_imports_tool(db_session, mocker):
-    mocker.patch("app.services.resume_import_service.get_openai_client", return_value=_fake_openai_client(_sample_parsed()))
+    mocker.patch("app.services.resume_import_service.get_ai_client", return_value=_fake_openai_client(_sample_parsed()))
     svc.parse_resume(db_session, "resume.txt", b"A career summary. " * 20)
 
     envelope, _ = await tool_router.invoke(db_session, "career.list_resume_imports", {})
@@ -220,7 +220,7 @@ def test_agent_confirm_resume_import_always_requires_approval():
 
 @pytest.mark.asyncio
 async def test_agent_confirm_resume_import_tool_writes_unverified_rows(db_session, mocker):
-    mocker.patch("app.services.resume_import_service.get_openai_client", return_value=_fake_openai_client(_sample_parsed()))
+    mocker.patch("app.services.resume_import_service.get_ai_client", return_value=_fake_openai_client(_sample_parsed()))
     resume_import = svc.parse_resume(db_session, "resume.txt", b"A career summary. " * 20)
 
     envelope, _ = await tool_router.invoke(db_session, "career.confirm_resume_import", {"resume_import_id": resume_import.id})

@@ -17,10 +17,9 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.ai.client import AIConfigurationError, get_openai_client
+from app.ai.client import AIConfigurationError, get_ai_client, get_ai_model
 from app.ai.resume_parse_outputs import ResumeParseOutput
 from app.ai.resume_parse_prompts import RESUME_PARSE_PROMPT_V1
-from app.config import get_settings
 from app.models.achievement import Achievement
 from app.models.certification import Certification
 from app.models.education import Education
@@ -81,12 +80,11 @@ def extract_text(filename: str, content: bytes) -> str:
 
 
 def _call_resume_parse(text: str) -> ResumeParseOutput:
-    settings = get_settings()
-    client = get_openai_client()  # raises AIConfigurationError if OPENAI_API_KEY unset
+    client = get_ai_client()  # raises AIConfigurationError if the configured provider's key is unset
 
     try:
         completion = client.chat.completions.parse(
-            model=settings.openai_model,
+            model=get_ai_model(),
             messages=[
                 {"role": "system", "content": RESUME_PARSE_PROMPT_V1},
                 {"role": "user", "content": text},
