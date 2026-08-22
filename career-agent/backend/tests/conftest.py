@@ -9,6 +9,11 @@ import os
 # whatever a developer's local .env happens to contain.
 os.environ.setdefault("BROWSER_HEADLESS", "true")
 os.environ.setdefault("DRY_RUN", "true")
+# Force the OpenAI code path regardless of a developer's local .env --
+# several tests assert AIConfigurationError/"OPENAI_API_KEY" when no key is
+# configured, which must hold even if that .env has switched AI_PROVIDER to
+# groq (with a real GROQ_API_KEY) for day-to-day local use.
+os.environ["AI_PROVIDER"] = "openai"
 
 import pytest
 from fastapi.testclient import TestClient
