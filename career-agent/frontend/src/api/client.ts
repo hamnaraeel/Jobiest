@@ -15,15 +15,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {}),
-    },
-  })
-
+async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let detail: unknown
     try {
@@ -41,6 +33,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`/api${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    },
+  })
+  return handleResponse<T>(response)
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
@@ -49,4 +52,8 @@ export const api = {
     request<T>(path, { method: 'PATCH', body: body !== undefined ? JSON.stringify(body) : undefined }),
   put: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'PUT', body: body !== undefined ? JSON.stringify(body) : undefined }),
+  // No Content-Type header here on purpose -- the browser sets
+  // multipart/form-data with the correct boundary itself when the body
+  // is a FormData instance, and overriding it manually breaks the upload.
+  upload: <T>(path: string, form: FormData) => fetch(`/api${path}`, { method: 'POST', body: form }).then((r) => handleResponse<T>(r)),
 }

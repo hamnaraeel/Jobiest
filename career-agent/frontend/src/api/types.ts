@@ -357,3 +357,49 @@ export interface ApplicationIntelligenceResponse {
   followup_recommendation: Nullable<string>
   historical_context: Record<string, unknown>
 }
+
+// --- Career profile / resume import ------------------------------------
+
+export interface CareerProfileRead {
+  id: number
+  full_name: string
+  professional_title: string
+  email: string
+  phone: Nullable<string>
+  city: Nullable<string>
+  country: Nullable<string>
+  linkedin_url: Nullable<string>
+  github_url: Nullable<string>
+  portfolio_url: Nullable<string>
+  current_summary: Nullable<string>
+  target_roles: string[]
+  preferred_industries: string[]
+  preferred_locations: string[]
+  remote_preference: Nullable<string>
+  years_of_experience: Nullable<number>
+  salary_expectation: Nullable<string>
+  work_authorization: Nullable<string>
+  relocation_preference: Nullable<string>
+  availability_date: Nullable<string>
+  created_at: string
+  updated_at: string
+}
+
+export type ResumeImportStatus = 'pending_review' | 'confirmed' | 'rejected'
+
+export interface ResumeImportRead {
+  id: number
+  profile_id: Nullable<number>
+  filename: string
+  parsed_data: Record<string, unknown>
+  warnings: string[]
+  status: ResumeImportStatus
+  confirmed_at: Nullable<string>
+  created_at: string
+  updated_at: string
+}
+
+export interface ResumeImportListResponse {
+  items: ResumeImportRead[]
+  total: number
+}
