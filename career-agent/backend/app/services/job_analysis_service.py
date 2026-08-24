@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
-from app.ai.client import get_ai_client, get_ai_model
+from app.ai.client import STRUCTURED_OUTPUT_MAX_TOKENS, get_ai_client, get_ai_extra_params, get_ai_model
 from app.ai.prompts import JOB_ANALYSIS_PROMPT_V1
 from app.ai.structured_outputs import JobAnalysisResult
 from app.models.enums import JobStatus, RequirementCategory, RequirementImportance
@@ -57,29 +57,41 @@ def _looks_preferred_language(text: str) -> bool:
     return bool(PREFERRED_LANGUAGE_PATTERN.search(text))
 
 
-def call_job_analysis(client, model: str, description: str) -> JobAnalysisResult:
-    try:
-        completion = client.chat.completions.parse(
-            model=model,
-            messages=[
-                {"role": "system", "content": JOB_ANALYSIS_PROMPT_V1},
-                {"role": "user", "content": description},
-            ],
-            response_format=JobAnalysisResult,
-        )
-    except Exception as exc:
-        logger.error("openai job analysis call failed: %s", exc.__class__.__name__)
-        raise AIResponseError(f"OpenAI request failed: {exc}") from exc
+def call_job_analysis(client, model: str, description: str, max_retries: int = 1) -> JobAnalysisResult:
+    last_error: Exception = AIResponseError("unknown error")
+    for attempt in range(max_retries + 1):
+        try:
+            completion = client.chat.completions.parse(
+                model=model,
+                messages=[
+                    {"role": "system", "content": JOB_ANALYSIS_PROMPT_V1},
+                    {"role": "user", "content": description},
+                ],
+                response_format=JobAnalysisResult,
+                max_tokens=STRUCTURED_OUTPUT_MAX_TOKENS,
+                **get_ai_extra_params(),
+            )
+        except Exception as exc:
+            # Small/fast structured-output models (e.g. Groq's gpt-oss-20b)
+            # occasionally emit slightly malformed JSON -- worth one retry
+            # before surfacing it.
+            logger.warning("job analysis call failed (attempt %d): %s", attempt + 1, exc.__class__.__name__)
+            last_error = AIResponseError(f"OpenAI request failed: {exc}")
+            continue
 
-    parsed = completion.choices[0].message.parsed
-    if parsed is None:
-        refusal = getattr(completion.choices[0].message, "refusal", None)
-        raise AIResponseError(f"Model did not return structured output: {refusal or 'unknown reason'}")
+        parsed = completion.choices[0].message.parsed
+        if parsed is None:
+            refusal = getattr(completion.choices[0].message, "refusal", None)
+            last_error = AIResponseError(f"Model did not return structured output: {refusal or 'unknown reason'}")
+            continue
 
-    try:
-        return JobAnalysisResult.model_validate(parsed.model_dump())
-    except ValidationError as exc:
-        raise AIResponseError(f"AI response failed schema validation: {exc}") from exc
+        try:
+            return JobAnalysisResult.model_validate(parsed.model_dump())
+        except ValidationError as exc:
+            last_error = AIResponseError(f"AI response failed schema validation: {exc}")
+            continue
+
+    raise last_error
 
 
 def _build_requirements(job_id: int, result: JobAnalysisResult) -> list[JobRequirement]:

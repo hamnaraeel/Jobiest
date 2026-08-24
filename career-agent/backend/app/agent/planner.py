@@ -47,7 +47,12 @@ _APPLICATION_ID_RE = re.compile(r"\bapplication\s*#?\s*(\d+)\b", re.IGNORECASE)
 _JOB_ID_RE = re.compile(r"\bjob\s*#?\s*(\d+)\b", re.IGNORECASE)
 _STRIP_RE = re.compile(
     r"^(find|search|show)\s+(me\s+)?(\d+\s+)?(good\s+|strong\s+|top\s+)*|"
-    r"\s+jobs?\b.*$|\bin\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*\b|\bremote\b|\band\b",
+    # \s* (not \s+): the prefix branch above already consumes the space
+    # before "jobs" in phrases like "Find jobs matching my profile", so a
+    # mandatory \s+ here would fail to match the now-adjacent "jobs" and
+    # leave the whole tail (e.g. "jobs matching my profile") in as a bogus
+    # keyword instead of falling back to the profile's own target roles.
+    r"\s*\bjobs?\b.*$|\bin\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*\b|\bremote\b|\band\b",
     re.IGNORECASE,
 )
 

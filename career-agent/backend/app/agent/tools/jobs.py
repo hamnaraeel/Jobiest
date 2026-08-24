@@ -16,7 +16,7 @@ from app.models.enums import JobStatus, PriorityLevel, ToolPermission, ToolRiskL
 from app.models.job import Job
 from app.schemas.job import JobRead
 from app.ai.client import AIConfigurationError
-from app.services.job_analysis_service import AnalysisInputError, analyze_job
+from app.services.job_analysis_service import AIResponseError, AnalysisInputError, analyze_job
 from app.services.job_matching_service import MatchInputError, compute_match
 from app.services.profile_service import get_default_profile
 
@@ -65,7 +65,7 @@ async def jobs_analyze(db: Session, args: JobIdArgs) -> dict:
         return {"success": False, "errors": [f"No job with id={args.job_id}."]}
     try:
         job = analyze_job(db, job)
-    except (AnalysisInputError, AIConfigurationError) as exc:
+    except (AnalysisInputError, AIConfigurationError, AIResponseError) as exc:
         return {"success": False, "errors": [str(exc)]}
     return {"job": JobRead.model_validate(job).model_dump(mode="json")}
 
@@ -77,7 +77,7 @@ async def jobs_match(db: Session, args: JobIdArgs) -> dict:
     if not job.extracted_at:
         try:
             job = analyze_job(db, job)
-        except (AnalysisInputError, AIConfigurationError) as exc:
+        except (AnalysisInputError, AIConfigurationError, AIResponseError) as exc:
             return {"success": False, "errors": [str(exc)]}
     try:
         match = compute_match(db, job)
@@ -121,7 +121,7 @@ async def jobs_rank(db: Session, args: JobsRankArgs) -> dict:
             if not job.match:
                 compute_match(db, job)
                 db.refresh(job)
-        except (AnalysisInputError, MatchInputError, AIConfigurationError) as exc:
+        except (AnalysisInputError, MatchInputError, AIConfigurationError, AIResponseError) as exc:
             skipped.append({"job_id": job_id, "reason": str(exc)})
             continue
 

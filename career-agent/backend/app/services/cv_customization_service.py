@@ -15,7 +15,7 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.ai.client import get_ai_client, get_ai_model
+from app.ai.client import STRUCTURED_OUTPUT_MAX_TOKENS, get_ai_client, get_ai_extra_params, get_ai_model
 from app.ai.cv_prompts import (
     CV_BULLET_REWRITE_PROMPT_V1,
     CV_PLAN_PROMPT_V1,
@@ -69,7 +69,13 @@ def _call_structured(client, model: str, system_prompt: str, user_content: str, 
 
     for attempt in range(max_retries + 1):
         try:
-            completion = client.chat.completions.parse(model=model, messages=messages, response_format=schema)
+            completion = client.chat.completions.parse(
+                model=model,
+                messages=messages,
+                response_format=schema,
+                max_tokens=STRUCTURED_OUTPUT_MAX_TOKENS,
+                **get_ai_extra_params(),
+            )
         except Exception as exc:
             last_error = f"OpenAI request failed: {exc}"
             completion = None

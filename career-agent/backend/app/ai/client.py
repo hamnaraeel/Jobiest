@@ -8,6 +8,17 @@ from app.config import get_settings
 
 logger = logging.getLogger("app.ai.client")
 
+# Groq's gpt-oss-* models are reasoning models that spend tokens on hidden
+# reasoning before emitting the actual JSON -- without an explicit budget,
+# Groq's own low default cuts that off mid-object and
+# `.chat.completions.parse()` fails with a generic "Failed to validate
+# JSON" (empty failed_generation). This free-tier Groq key is additionally
+# capped at 8000 tokens/minute *total* (prompt + max_tokens) per request,
+# so the budget below is kept well under that even for a sizeable
+# resume/job-description prompt. OpenAI's non-reasoning models don't need
+# this much, but accept the same param.
+STRUCTURED_OUTPUT_MAX_TOKENS = 4500
+
 
 class AIConfigurationError(RuntimeError):
     """Raised when an AI-powered feature is used without its provider
@@ -53,6 +64,19 @@ def get_ai_client() -> OpenAI:
     return get_openai_client()
 
 
+def get_ai_extra_params() -> dict:
+    """Provider-specific kwargs to splat into `.chat.completions.parse()`
+    calls. Groq's gpt-oss models default to spending most of the token
+    budget on hidden reasoning (see STRUCTURED_OUTPUT_MAX_TOKENS) --
+    `reasoning_effort="low"` keeps that in check so the visible JSON
+    reliably fits within budget. OpenAI's models don't accept this param
+    for chat.completions, so it's Groq-only."""
+    settings = get_settings()
+    if settings.ai_provider == "groq":
+        return {"reasoning_effort": "low"}
+    return {}
+
+
 def get_ai_model() -> str:
     settings = get_settings()
     return settings.groq_model if settings.ai_provider == "groq" else settings.openai_model
@@ -72,7 +96,12 @@ class OllamaClient:
     which is how structured output is enforced here without needing
     OpenAI's SDK-specific `.chat.completions.parse()` helper."""
 
-    def __init__(self, base_url: str, model: str, timeout: float = 120.0):
+    def __init__(self, base_url: str, model: str, timeout: float = 300.0):
+        # CPU-only local inference on modest hardware: structured (schema-
+        # constrained) generation over a full resume/job-description
+        # prompt reliably takes 1-2 minutes even on a small model, well
+        # past a naive 120s default -- 300s gives real headroom without
+        # hanging forever on a genuinely dead Ollama server.
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout = timeout

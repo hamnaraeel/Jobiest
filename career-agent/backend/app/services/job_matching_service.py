@@ -14,7 +14,13 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.ai.client import AIConfigurationError, get_ai_client, get_ai_model
+from app.ai.client import (
+    AIConfigurationError,
+    STRUCTURED_OUTPUT_MAX_TOKENS,
+    get_ai_client,
+    get_ai_extra_params,
+    get_ai_model,
+)
 from app.ai.prompts import JOB_MATCH_EXPLANATION_PROMPT_V1
 from app.ai.structured_outputs import MatchExplanationResult
 from app.models.achievement import Achievement
@@ -475,6 +481,8 @@ def _generate_explanation(
                 {"role": "user", "content": payload},
             ],
             response_format=MatchExplanationResult,
+            max_tokens=STRUCTURED_OUTPUT_MAX_TOKENS,
+            **get_ai_extra_params(),
         )
         parsed = completion.choices[0].message.parsed
         if parsed is None:

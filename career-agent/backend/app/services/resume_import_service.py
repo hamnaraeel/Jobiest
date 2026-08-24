@@ -17,7 +17,13 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.ai.client import AIConfigurationError, get_ai_client, get_ai_model
+from app.ai.client import (
+    AIConfigurationError,
+    STRUCTURED_OUTPUT_MAX_TOKENS,
+    get_ai_client,
+    get_ai_extra_params,
+    get_ai_model,
+)
 from app.ai.resume_parse_outputs import ResumeParseOutput
 from app.ai.resume_parse_prompts import RESUME_PARSE_PROMPT_V1
 from app.models.achievement import Achievement
@@ -79,31 +85,43 @@ def extract_text(filename: str, content: bytes) -> str:
     return text
 
 
-def _call_resume_parse(text: str) -> ResumeParseOutput:
+def _call_resume_parse(text: str, max_retries: int = 1) -> ResumeParseOutput:
     client = get_ai_client()  # raises AIConfigurationError if the configured provider's key is unset
 
-    try:
-        completion = client.chat.completions.parse(
-            model=get_ai_model(),
-            messages=[
-                {"role": "system", "content": RESUME_PARSE_PROMPT_V1},
-                {"role": "user", "content": text},
-            ],
-            response_format=ResumeParseOutput,
-        )
-    except Exception as exc:
-        logger.error("openai resume parse call failed: %s", exc.__class__.__name__)
-        raise AIResponseError(f"OpenAI request failed: {exc}") from exc
+    last_error: Exception = AIResponseError("unknown error")
+    for attempt in range(max_retries + 1):
+        try:
+            completion = client.chat.completions.parse(
+                model=get_ai_model(),
+                messages=[
+                    {"role": "system", "content": RESUME_PARSE_PROMPT_V1},
+                    {"role": "user", "content": text},
+                ],
+                response_format=ResumeParseOutput,
+                max_tokens=STRUCTURED_OUTPUT_MAX_TOKENS,
+                **get_ai_extra_params(),
+            )
+        except Exception as exc:
+            # Small/fast structured-output models (e.g. Groq's gpt-oss-20b)
+            # occasionally emit slightly malformed JSON on a large, repetitive
+            # schema like this one -- worth one retry before surfacing it.
+            logger.warning("resume parse call failed (attempt %d): %s", attempt + 1, exc.__class__.__name__)
+            last_error = AIResponseError(f"OpenAI request failed: {exc}")
+            continue
 
-    parsed = completion.choices[0].message.parsed
-    if parsed is None:
-        refusal = getattr(completion.choices[0].message, "refusal", None)
-        raise AIResponseError(f"Model did not return structured output: {refusal or 'unknown reason'}")
+        parsed = completion.choices[0].message.parsed
+        if parsed is None:
+            refusal = getattr(completion.choices[0].message, "refusal", None)
+            last_error = AIResponseError(f"Model did not return structured output: {refusal or 'unknown reason'}")
+            continue
 
-    try:
-        return ResumeParseOutput.model_validate(parsed.model_dump())
-    except ValidationError as exc:
-        raise AIResponseError(f"AI response failed schema validation: {exc}") from exc
+        try:
+            return ResumeParseOutput.model_validate(parsed.model_dump())
+        except ValidationError as exc:
+            last_error = AIResponseError(f"AI response failed schema validation: {exc}")
+            continue
+
+    raise last_error
 
 
 def parse_resume(db: Session, filename: str, content: bytes, profile_id: int | None = None) -> ResumeImport:

@@ -16,7 +16,11 @@ class Settings(BaseSettings):
     # use it in place of OpenAI for those four services.
     ai_provider: str = "openai"
     groq_api_key: str = ""
-    groq_model: str = "openai/gpt-oss-120b"
+    # gpt-oss-20b, not the larger 120b: same free-tier 8000 tokens/minute
+    # cap applies to both, and 20b's lighter reasoning overhead leaves far
+    # more of that budget for the actual JSON response (see
+    # STRUCTURED_OUTPUT_MAX_TOKENS in ai/client.py).
+    groq_model: str = "openai/gpt-oss-20b"
     groq_base_url: str = "https://api.groq.com/openai/v1"
 
     cv_max_pages: int = 1
