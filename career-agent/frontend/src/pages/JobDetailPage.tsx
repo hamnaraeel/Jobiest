@@ -5,6 +5,7 @@ import Card from '../components/Card'
 import Button from '../components/Button'
 import Badge, { StatusBadge } from '../components/Badge'
 import ConfidenceBar from '../components/ConfidenceBar'
+import ApplicationMaterialsPanel from '../components/ApplicationMaterialsPanel'
 import { LoadingState, ErrorState } from '../components/AsyncState'
 
 function ScorePanel({
@@ -169,6 +170,8 @@ export default function JobDetailPage() {
           )}
         </>
       )}
+
+      <ApplicationMaterialsPanel jobId={id} />
 
       {job.description && (
         <Card title="Job description">

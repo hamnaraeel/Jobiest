@@ -403,3 +403,146 @@ export interface ResumeImportListResponse {
   items: ResumeImportRead[]
   total: number
 }
+
+// --- CV / cover letter generation --------------------------------------
+
+export type CVStatus = 'draft' | 'validated' | 'approved' | 'rejected' | 'archived'
+export type MaterialStatus = 'draft' | 'validated' | 'approved' | 'rejected'
+
+export interface CVBullet {
+  text: string
+  source_type: string
+  source_id: number
+  verified: boolean
+}
+
+export interface CVSkillCategory {
+  category: string
+  skills: string[]
+}
+
+export interface CVExperienceEntry {
+  experience_id: number
+  company: string
+  role: string
+  location: Nullable<string>
+  start_date: Nullable<string>
+  end_date: Nullable<string>
+  currently_working: boolean
+  bullets: CVBullet[]
+}
+
+export interface CVProjectEntry {
+  project_id: number
+  name: string
+  technologies: string[]
+  github_url: Nullable<string>
+  bullets: CVBullet[]
+}
+
+export interface CVVersionRead {
+  id: number
+  job_id: number
+  profile_id: number
+  version_name: string
+  version_number: number
+  template_name: string
+  status: CVStatus
+  summary: Nullable<string>
+  skills: CVSkillCategory[]
+  experience: CVExperienceEntry[]
+  projects: CVProjectEntry[]
+  education: Record<string, unknown>[]
+  certifications: Record<string, unknown>[]
+  research: Record<string, unknown>[]
+  achievements: Record<string, unknown>[]
+  pdf_path: Nullable<string>
+  match_score_before: Nullable<number>
+  match_score_after: Nullable<number>
+  warnings: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface CoverLetterRead {
+  id: number
+  job_id: number
+  cv_version_id: number
+  profile_id: number
+  version_name: string
+  version_number: number
+  title: string
+  content: string
+  word_count: number
+  status: MaterialStatus
+  source_evidence: Record<string, unknown>[]
+  warnings: string[]
+  pdf_path: Nullable<string>
+  created_at: string
+  updated_at: string
+}
+
+export interface CoverLetterListResponse {
+  items: CoverLetterRead[]
+  total: number
+}
+
+export interface ApplicationMaterialsSummary {
+  job: { id: number; title: Nullable<string>; company: Nullable<string>; location: Nullable<string>; status: string }
+  match: Nullable<{ score: number; recommendation: string }>
+  cv: Nullable<{ id: number; status: CVStatus; version_name: string }>
+  cover_letter: Nullable<{ id: number; status: MaterialStatus; version_name: string }>
+  answers: Record<string, unknown>[]
+  ready_for_application: boolean
+}
+
+// --- Browser-assisted submission (Step 5) -------------------------------
+// A real submit click can only ever happen with DRY_RUN disabled AND an
+// explicit approve-submission call -- see submission_guard.py. The UI
+// below drives that same gated flow; it does not bypass it.
+
+export interface ApplicationFieldRead {
+  id: number
+  application_id: number
+  field_identifier: string
+  label: Nullable<string>
+  field_type: string
+  page_url: Nullable<string>
+  required: boolean
+  detected_value: Nullable<string>
+  mapped_source: Nullable<string>
+  proposed_value: Nullable<string>
+  final_value: Nullable<string>
+  status: string
+  confidence: Nullable<number>
+  user_review_required: boolean
+}
+
+export interface PageAnalysisResponse {
+  url: string
+  title: string
+  captcha_detected: boolean
+  captcha_indicator: Nullable<string>
+  login_required: boolean
+  has_password_field: boolean
+}
+
+export interface ApplicationReviewResponse {
+  application: ApplicationRead
+  fields: ApplicationFieldRead[]
+  warnings: string[]
+  ready_for_submission: boolean
+}
+
+export interface FillResultResponse {
+  filled: ApplicationFieldRead[]
+  uploaded: ApplicationFieldRead[]
+  needs_user_input: ApplicationFieldRead[]
+}
+
+export interface SubmitResultResponse {
+  submitted: boolean
+  dry_run: boolean
+  reason: Nullable<string>
+  confirmation_reference: Nullable<string>
+}

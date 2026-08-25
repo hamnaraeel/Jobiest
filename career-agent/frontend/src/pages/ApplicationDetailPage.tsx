@@ -15,6 +15,8 @@ import { useApi } from '../hooks/useApi'
 import Card from '../components/Card'
 import Button from '../components/Button'
 import { StatusBadge } from '../components/Badge'
+import ApplicationMaterialsPanel from '../components/ApplicationMaterialsPanel'
+import SubmissionPanel from '../components/SubmissionPanel'
 import { LoadingState, ErrorState, EmptyState } from '../components/AsyncState'
 import type { ApplicationStatus } from '../api/types'
 
@@ -132,6 +134,10 @@ export default function ApplicationDetailPage() {
           )}
         </Card>
       )}
+
+      <ApplicationMaterialsPanel jobId={application.job_id} existingApplicationId={application.id} />
+
+      <SubmissionPanel application={application} onChanged={refetchApp} />
 
       <Card title="Update status" subtitle="Every change is recorded, never overwritten">
         <div className="flex flex-wrap items-end gap-3">
