@@ -13,11 +13,16 @@ logger = logging.getLogger("app.ai.client")
 # Groq's own low default cuts that off mid-object and
 # `.chat.completions.parse()` fails with a generic "Failed to validate
 # JSON" (empty failed_generation). This free-tier Groq key is additionally
-# capped at 8000 tokens/minute *total* (prompt + max_tokens) per request,
-# so the budget below is kept well under that even for a sizeable
-# resume/job-description prompt. OpenAI's non-reasoning models don't need
-# this much, but accept the same param.
-STRUCTURED_OUTPUT_MAX_TOKENS = 4500
+# capped at 8000 tokens/minute *total* (prompt + max_tokens) per request --
+# admission is checked against the requested max_tokens ceiling, not actual
+# usage, so a generous budget fails outright even when the real completion
+# would have fit. Measured against the resume-parse schema specifically
+# (its JSON schema alone costs ~1650 prompt tokens on top of the resume
+# text, leaving little headroom): full completions land at 3900-4250
+# tokens, so 4300 covers that with only ~50-350 tokens to spare against the
+# 8000 cap -- tight, but 4500 measurably tipped over it. OpenAI's
+# non-reasoning models don't need this much, but accept the same param.
+STRUCTURED_OUTPUT_MAX_TOKENS = 4300
 
 
 class AIConfigurationError(RuntimeError):
