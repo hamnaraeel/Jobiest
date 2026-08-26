@@ -1,22 +1,78 @@
 \documentclass[10pt]{article}
-\usepackage[margin=0.7in]{geometry}
+
+% TEMPORARY: this machine's TeX install is missing the `helvetic` font-
+% metrics package that \usepackage[scaled]{helvet} (true Arial-equivalent
+% Helvetica/Nimbus Sans) needs -- installing it requires
+% `sudo tlmgr install helvetic`, which needs an interactive password
+% Claude can't supply. Using Latin Modern Sans instead for now: a real,
+% already-installed scalable sans-serif font, so generation isn't blocked
+% waiting on that install. Swap the two lines below for the ones in the
+% comment once `helvetic` is installed -- everything else in this
+% template (no \scshape, glyphtounicode, tabular* rows) is unaffected
+% either way.
+% \usepackage[scaled=0.92]{helvet}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\renewcommand{\familydefault}{\sfdefault}
+
+\usepackage[left=0.75in,right=0.75in,top=0.6in,bottom=0.6in]{geometry}
 \usepackage[hidelinks]{hyperref}
+\usepackage{array}
+
+% Compiled with plain pdflatex -- these two lines are what make the PDF's
+% text layer map back to real Unicode characters instead of raw font
+% glyph indices, which is what lets pdftotext (and every ATS parser)
+% extract clean, correctly-spaced text.
+\input{glyphtounicode}
+\pdfgentounicode=1
 
 \pagestyle{empty}
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{2pt}
 
 \newcommand{\sectiontitle}[1]{%
-  \vspace{6pt}
-  \noindent{\large\bfseries #1}\\[-2pt]
-  \noindent\rule{\linewidth}{0.5pt}\\[2pt]
+  \vspace{8pt}
+  \noindent{\large\bfseries #1}\\[-3pt]
+  \noindent\rule{\linewidth}{0.6pt}\\[3pt]
 }
+
+\newcommand{\subsectiontitle}[1]{%
+  \vspace{3pt}
+  \noindent\textit{\textbf{#1}}\\[1pt]
+}
+
+% Single-column layout throughout -- this is the one ATS-safe use of a
+% two-column construct, for aligning a title/company on the left against
+% a date range on the right without manual \hfill spacing (which some
+% parsers mis-order).
+\newcommand{\tworow}[2]{%
+  \noindent\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}l r@{}}
+    #1 & #2
+  \end{tabular*}\\[1pt]%
+}
+
+% Tight bullet lists using only plain-LaTeX list primitives (no enumitem
+% dependency, which this TeX installation doesn't have and can't self-
+% install) -- \tightlist for normal bullets, \tightlistzero for
+% zero-itemsep lists like Certifications.
+\newenvironment{tightlist}{%
+  \begin{itemize}
+  \setlength{\itemsep}{1pt}
+  \setlength{\parskip}{0pt}
+  \setlength{\topsep}{2pt}
+}{\end{itemize}}
+
+\newenvironment{tightlistzero}{%
+  \begin{itemize}
+  \setlength{\itemsep}{0pt}
+  \setlength{\parskip}{0pt}
+  \setlength{\topsep}{2pt}
+}{\end{itemize}}
 
 \begin{document}
 
 \begin{center}
-  {\LARGE \bfseries {{NAME}}}\\[3pt]
-  {{CONTACT_LINE}}
+{{HEADER_BLOCK}}
 \end{center}
 
 {{BODY}}

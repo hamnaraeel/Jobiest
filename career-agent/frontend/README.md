@@ -1,6 +1,6 @@
-# Career Agent — Frontend
+# Jobiest — Frontend
 
-A React dashboard for the Career Agent backend, covering Step 6 (job
+A React dashboard for the Jobiest backend, covering Step 6 (job
 search tracking & analytics) and Step 7 (job search intelligence &
 recommendations). Built with Vite, TypeScript, Tailwind CSS, React
 Router, and Recharts.

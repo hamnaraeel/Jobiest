@@ -1,4 +1,4 @@
-# Career Agent
+# Jobiest
 
 An AI-powered job application agent, built step by step.
 

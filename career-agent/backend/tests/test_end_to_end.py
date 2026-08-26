@@ -13,7 +13,7 @@ instance. Step 5's browser automation is real Playwright against the
 local HTML fixture, never a real job site.
 """
 
-from app.ai.cv_structured_outputs import CVContentOutput, CVPlanOutput, ExperienceContentOutput, ProjectContentOutput, RewrittenBullet, SkillCategoryOutput
+from app.ai.cv_structured_outputs import CVContentOutput, CVPlanOutput, SkillCategoryOutput
 from app.ai.structured_outputs import ApplicationAnswerOutput, CoverLetterOutput
 from app.models.enums import ApplicationStatus, JobStatus
 
@@ -39,8 +39,6 @@ def test_full_step_1_to_7_workflow(
     client, rich_profile, db_session, make_analyzed_job, mocker, fake_ollama_client, fixture_url, allow_real_submit,
 ):
     profile = rich_profile["profile"]
-    experience = rich_profile["experience"]
-    project = rich_profile["project"]
 
     # --- Step 2: job discovery, analysis, match ----------------------------
     job = make_analyzed_job(
@@ -61,16 +59,11 @@ def test_full_step_1_to_7_workflow(
     # --- Step 3: tailored CV -------------------------------------------
     plan_output = CVPlanOutput(
         target_role="Machine Learning Engineer", priority_skills=["PyTorch"],
-        selected_experience_ids=[experience["id"]], selected_project_ids=[project["id"]], selected_research_ids=[],
-        sections=["summary", "skills", "experience", "projects"], reasoning="PyTorch experience is directly relevant.",
+        reasoning="PyTorch experience is directly relevant.",
     )
     content_output = CVContentOutput(
         summary="Machine Learning Engineer with hands-on PyTorch experience.",
         skill_categories=[SkillCategoryOutput(category="ML/DL", skills=["PyTorch"])],
-        experience=[ExperienceContentOutput(experience_id=experience["id"], bullets=[
-            RewrittenBullet(source_bullet_id=experience["bullets"][0]["id"], rewritten_text=experience["bullets"][0]["bullet"]),
-        ])],
-        projects=[ProjectContentOutput(project_id=project["id"], bullets=[])],
     )
     mocker.patch("app.services.cv_customization_service.get_ai_client", return_value=_fake_openai_client(plan_output, content_output))
     cv_resp = client.post(f"/jobs/{job.id}/cv/generate")

@@ -2,11 +2,17 @@
 (plus a few direct diffs) to answer GET /cvs/{id}/comparison. Nothing here
 calls the LLM -- a comparison is just a description of decisions already
 made deterministically or already recorded.
-"""
+
+Experience, projects, and section order are deliberately absent from this
+audit trail: the full profile is always included, verbatim, on every
+tailored CV (see cv_customization_service.assemble_cv_content), so there
+is never an "added"/"removed"/"reworded" experience or project, or a
+reordered section, to report. Only the two things that do vary per job --
+which skills are surfaced, and the summary wording -- are tracked."""
 
 from app.models.cv_change import CVChange
 from app.models.cv_version import CVVersion
-from app.models.enums import CVChangeType, CVSectionType, EntityType
+from app.models.enums import CVChangeType, CVSectionType
 from app.schemas.cv import CVComparisonEntry, CVComparisonResponse
 from app.schemas.cv_generation import CVPlan
 from app.services.job_matching_service import ProfileContext, normalize_skill
@@ -39,97 +45,13 @@ def build_cv_changes(plan: CVPlan, sanitized: dict, ctx: ProfileContext) -> list
                 original_text=name, reason="Not relevant to this job.",
             ))
 
-    for exp in ctx.experiences:
-        if exp.id not in plan.selected_experience_ids:
-            changes.append(CVChange(
-                change_type=CVChangeType.REMOVED, section=CVSectionType.EXPERIENCE,
-                original_text=f"{exp.role} at {exp.company}",
-                source_type=EntityType.EXPERIENCE, source_id=str(exp.id),
-                reason="Not selected as relevant to this job.",
-            ))
-            continue
-
-        changes.append(CVChange(
-            change_type=CVChangeType.ADDED, section=CVSectionType.EXPERIENCE,
-            customized_text=f"{exp.role} at {exp.company}",
-            source_type=EntityType.EXPERIENCE, source_id=str(exp.id),
-            reason="Relevant to job requirements.",
-        ))
-        included = {b["source_bullet_id"]: b["text"] for b in sanitized["experience"].get(exp.id, [])}
-        for bullet in exp.bullets:
-            if bullet.id not in included:
-                changes.append(CVChange(
-                    change_type=CVChangeType.REMOVED, section=CVSectionType.EXPERIENCE,
-                    original_text=bullet.bullet,
-                    source_type=EntityType.EXPERIENCE_BULLET, source_id=str(bullet.id),
-                    reason="Not relevant to this job.",
-                ))
-            elif included[bullet.id] != bullet.bullet:
-                changes.append(CVChange(
-                    change_type=CVChangeType.REWRITTEN, section=CVSectionType.EXPERIENCE,
-                    original_text=bullet.bullet, customized_text=included[bullet.id],
-                    source_type=EntityType.EXPERIENCE_BULLET, source_id=str(bullet.id),
-                    reason="Reworded for relevance to this job.",
-                ))
-
-    for proj in ctx.projects:
-        if proj.id not in plan.selected_project_ids:
-            changes.append(CVChange(
-                change_type=CVChangeType.REMOVED, section=CVSectionType.PROJECTS,
-                original_text=proj.name,
-                source_type=EntityType.PROJECT, source_id=str(proj.id),
-                reason="Not selected as relevant to this job.",
-            ))
-            continue
-
-        changes.append(CVChange(
-            change_type=CVChangeType.ADDED, section=CVSectionType.PROJECTS,
-            customized_text=proj.name,
-            source_type=EntityType.PROJECT, source_id=str(proj.id),
-            reason="Relevant to job requirements.",
-        ))
-        included = {b["source_bullet_id"]: b["text"] for b in sanitized["projects"].get(proj.id, [])}
-        for result in proj.results:
-            # Matches cv_customization_service's validation baseline: a
-            # ProjectResult's full "original text" is description + metric
-            # combined, not description alone.
-            original_result_text = f"{result.description} {result.metric or ''}".strip()
-            if result.id not in included:
-                changes.append(CVChange(
-                    change_type=CVChangeType.REMOVED, section=CVSectionType.PROJECTS,
-                    original_text=original_result_text,
-                    source_type=EntityType.PROJECT_RESULT, source_id=str(result.id),
-                    reason="Not relevant to this job.",
-                ))
-            elif included[result.id] != original_result_text:
-                changes.append(CVChange(
-                    change_type=CVChangeType.REWRITTEN, section=CVSectionType.PROJECTS,
-                    original_text=original_result_text, customized_text=included[result.id],
-                    source_type=EntityType.PROJECT_RESULT, source_id=str(result.id),
-                    reason="Reworded for relevance to this job.",
-                ))
-
-    canonical_order = [s for s in CVSectionType if s in plan.sections]
-    if plan.sections != canonical_order:
-        changes.append(CVChange(
-            change_type=CVChangeType.REORDERED, section=CVSectionType.SUMMARY,
-            customized_text=", ".join(s.value for s in plan.sections),
-            reason="Section order tailored to emphasize the most job-relevant content first.",
-        ))
-
     return changes
 
 
 def build_comparison_response(cv_version: CVVersion, changes: list[CVChange]) -> CVComparisonResponse:
     added_skills = [c.customized_text for c in changes if c.section == CVSectionType.SKILLS and c.change_type == CVChangeType.EMPHASIZED]
     de_emphasized = [c.original_text for c in changes if c.section == CVSectionType.SKILLS and c.change_type == CVChangeType.DE_EMPHASIZED]
-    added_projects = [c.customized_text for c in changes if c.section == CVSectionType.PROJECTS and c.change_type == CVChangeType.ADDED]
-    removed_projects = [
-        c.original_text for c in changes
-        if c.section == CVSectionType.PROJECTS and c.change_type == CVChangeType.REMOVED and c.source_type == EntityType.PROJECT
-    ]
     summary_changed = any(c.section == CVSectionType.SUMMARY and c.change_type == CVChangeType.REWRITTEN for c in changes)
-    section_order_change = next((c for c in changes if c.change_type == CVChangeType.REORDERED), None)
 
     return CVComparisonResponse(
         cv_id=cv_version.id,
@@ -140,10 +62,13 @@ def build_comparison_response(cv_version: CVVersion, changes: list[CVChange]) ->
         removed_skills=[],
         reordered_skills=added_skills,
         de_emphasized_skills=de_emphasized,
-        added_projects=added_projects,
-        removed_projects=removed_projects,
+        # Experience/projects are always included in full and never
+        # reordered (see module docstring), so these are permanently
+        # empty -- kept in the response shape for API stability.
+        added_projects=[],
+        removed_projects=[],
         summary_changed=summary_changed,
-        section_order=section_order_change.customized_text.split(", ") if section_order_change else [],
+        section_order=[],
         changes=[
             CVComparisonEntry(
                 change_type=c.change_type.value, section=c.section.value,

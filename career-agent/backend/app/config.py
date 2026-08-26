@@ -23,7 +23,13 @@ class Settings(BaseSettings):
     groq_model: str = "openai/gpt-oss-20b"
     groq_base_url: str = "https://api.groq.com/openai/v1"
 
-    cv_max_pages: int = 1
+    # A real CV now always includes the full Career Profile verbatim (no
+    # AI trimming of experiences/projects/bullets -- see
+    # cv_customization_service.py), so a 1-page target is unrealistic for
+    # most candidates. 2 pages (+1 page tolerance below, so up to 3
+    # actually warns) is a more realistic default; still warning-only,
+    # never a hard block on generation.
+    cv_max_pages: int = 2
     cv_storage_dir: str = "../data/cvs"
     pdflatex_path: str = "pdflatex"
 

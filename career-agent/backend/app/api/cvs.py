@@ -110,15 +110,30 @@ def get_cv(cv_id: int, db: Session = Depends(get_db)):
     return _get_cv_or_404(db, cv_id)
 
 
-@cvs_router.get("/{cv_id}/download")
-def download_cv(cv_id: int, db: Session = Depends(get_db)):
+def _get_cv_pdf_path(db: Session, cv_id: int) -> tuple[CVVersion, Path]:
     cv = _get_cv_or_404(db, cv_id)
     if not cv.pdf_path:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "This CV version has no compiled PDF yet.")
     pdf_path = Path(cv.pdf_path)
     if not pdf_path.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "The PDF file for this CV version is missing on disk.")
+    return cv, pdf_path
+
+
+@cvs_router.get("/{cv_id}/download")
+def download_cv(cv_id: int, db: Session = Depends(get_db)):
+    cv, pdf_path = _get_cv_pdf_path(db, cv_id)
     return FileResponse(pdf_path, media_type="application/pdf", filename=f"{cv.version_name}.pdf")
+
+
+@cvs_router.get("/{cv_id}/preview")
+def preview_cv(cv_id: int, db: Session = Depends(get_db)):
+    """Same PDF as /download, but rendered inline in the browser instead
+    of triggering a save dialog -- for a quick look without downloading a
+    file every time a CV is regenerated."""
+
+    cv, pdf_path = _get_cv_pdf_path(db, cv_id)
+    return FileResponse(pdf_path, media_type="application/pdf", filename=f"{cv.version_name}.pdf", content_disposition_type="inline")
 
 
 @cvs_router.get("/{cv_id}/comparison", response_model=CVComparisonResponse)

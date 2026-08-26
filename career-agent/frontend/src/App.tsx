@@ -15,10 +15,10 @@ export default function App() {
       <aside className="glass-panel sticky top-4 m-4 flex h-[calc(100vh-2rem)] w-64 shrink-0 flex-col rounded-2xl px-4 py-6">
         <div className="mb-8 flex items-center gap-3 px-2">
           <div className="gradient-accent glow-accent flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-base font-bold text-white">
-            C
+            J
           </div>
           <div>
-            <h1 className="gradient-text text-base font-semibold tracking-tight">Career Agent</h1>
+            <h1 className="gradient-text text-base font-semibold tracking-tight">Jobiest</h1>
             <p className="text-[11px] text-slate-400">Job search command center</p>
           </div>
         </div>

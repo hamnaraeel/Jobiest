@@ -59,7 +59,7 @@ def _bullets_to_latex(bullets) -> str:
     if not bullets:
         return ""
     items = "\n".join(f"  \\item {escape_latex(b.text)}" for b in bullets)
-    return f"\\begin{{itemize}}\n{items}\n\\end{{itemize}}"
+    return f"\\begin{{tightlist}}\n{items}\n\\end{{tightlist}}"
 
 
 def _format_month_year(d) -> str:
@@ -98,21 +98,42 @@ def render_experience_section(experience) -> str:
         return ""
     blocks = []
     for e in experience:
-        header = f"\\noindent\\textbf{{{escape_latex(e.role)}}}, {escape_latex(e.company)} \\hfill {_date_range(e.start_date, e.end_date, e.currently_working)}\\\\"
-        location = f"\\textit{{{escape_latex(e.location)}}}\\\\" if e.location else ""
-        blocks.append(header + ("\n" + location if location else "") + "\n" + _bullets_to_latex(e.bullets))
+        left = f"\\textbf{{{escape_latex(e.role)}}}, {escape_latex(e.company)}"
+        if e.location:
+            left += f" -- {escape_latex(e.location)}"
+        right = _date_range(e.start_date, e.end_date, e.currently_working)
+        header = f"\\tworow{{{left}}}{{{right}}}"
+        blocks.append(header + "\n" + _bullets_to_latex(e.bullets))
     return "\\sectiontitle{Experience}\n" + "\n\\vspace{4pt}\n".join(blocks) + "\n"
 
 
 def render_projects_section(projects) -> str:
     if not projects:
         return ""
-    blocks = []
+    # Grouped under a category subheading (e.g. "Research & ML" vs
+    # "Engineering & Full-Stack") when more than one category is present
+    # -- each project's category was assigned deterministically from its
+    # own recorded skill tags, not by the job being applied to (see
+    # cv_customization_service._project_category), so grouping is stable
+    # across every generation.
+    categories: dict[str, list] = {}
     for p in projects:
+        categories.setdefault(p.category, []).append(p)
+
+    def _project_block(p) -> str:
         tech = f" \\textit{{({escape_latex(', '.join(p.technologies))})}}" if p.technologies else ""
         header = f"\\noindent\\textbf{{{escape_latex(p.name)}}}{tech}\\\\"
-        blocks.append(header + "\n" + _bullets_to_latex(p.bullets))
-    return "\\sectiontitle{Projects}\n" + "\n\\vspace{4pt}\n".join(blocks) + "\n"
+        return header + "\n" + _bullets_to_latex(p.bullets)
+
+    if len(categories) <= 1:
+        blocks = [_project_block(p) for p in projects]
+        return "\\sectiontitle{Projects}\n" + "\n\\vspace{4pt}\n".join(blocks) + "\n"
+
+    parts = ["\\sectiontitle{Projects}"]
+    for category, items in categories.items():
+        parts.append(f"\\subsectiontitle{{{escape_latex(category)}}}")
+        parts.append("\n\\vspace{4pt}\n".join(_project_block(p) for p in items))
+    return "\n".join(parts) + "\n"
 
 
 def render_research_section(research) -> str:
@@ -133,8 +154,9 @@ def render_education_section(education) -> str:
     blocks = []
     for e in education:
         field = f", {escape_latex(e.field)}" if e.field else ""
-        header = f"\\noindent\\textbf{{{escape_latex(e.degree)}{field}}}, {escape_latex(e.institution)} \\hfill {_date_range(e.start_date, e.end_date)}\\\\"
-        blocks.append(header)
+        left = f"\\textbf{{{escape_latex(e.degree)}{field}}}, {escape_latex(e.institution)}"
+        right = _date_range(e.start_date, e.end_date)
+        blocks.append(f"\\tworow{{{left}}}{{{right}}}")
     return "\\sectiontitle{Education}\n" + "\n".join(blocks) + "\n"
 
 
@@ -142,9 +164,9 @@ def render_certifications_section(certifications) -> str:
     if not certifications:
         return ""
     items = "\n".join(
-        f"  \\item {escape_latex(c.name)}, {escape_latex(c.issuer)}" for c in certifications
+        f"  \\item {escape_latex(c.name)}, \\textbf{{{escape_latex(c.issuer)}}}" for c in certifications
     )
-    return f"\\sectiontitle{{Certifications}}\n\\begin{{itemize}}\n{items}\n\\end{{itemize}}\n"
+    return f"\\sectiontitle{{Certifications \\& Trainings}}\n\\begin{{tightlistzero}}\n{items}\n\\end{{tightlistzero}}\n"
 
 
 def render_achievements_section(achievements) -> str:
@@ -154,7 +176,7 @@ def render_achievements_section(achievements) -> str:
     for a in achievements:
         metric = f" ({escape_latex(a.metric)})" if a.metric else ""
         items.append(f"  \\item {escape_latex(a.title)}{metric}")
-    return "\\sectiontitle{Achievements}\n\\begin{itemize}\n" + "\n".join(items) + "\n\\end{itemize}\n"
+    return "\\sectiontitle{Achievements}\n\\begin{tightlist}\n" + "\n".join(items) + "\n\\end{tightlist}\n"
 
 
 _SECTION_RENDERERS = {
@@ -178,25 +200,34 @@ def render_cv_to_latex(content: CVContent, template_name: str = "ats/ml_engineer
 
     template = template_path.read_text(encoding="utf-8")
 
-    contact_parts = [
-        p for p in [
-            content.header.email,
-            content.header.phone,
-            content.header.linkedin,
-            content.header.github,
-            content.header.portfolio,
-            content.header.location,
-        ] if p
-    ]
-    contact_line = " \\quad|\\quad ".join(escape_latex(p) for p in contact_parts)
+    # Two contact lines, not one: location/phone (how to reach the
+    # candidate directly) on the first, email/LinkedIn/GitHub/portfolio
+    # (online presence) on the second.
+    line1_parts = [p for p in [content.header.location, content.header.phone] if p]
+    line2_parts = [p for p in [content.header.email, content.header.linkedin, content.header.github, content.header.portfolio] if p]
+    contact_line_1 = " \\quad|\\quad ".join(escape_latex(p) for p in line1_parts)
+    contact_line_2 = " \\quad|\\quad ".join(escape_latex(p) for p in line2_parts)
+
+    # Built line-by-line and joined with \\ rather than templated with a
+    # fixed number of \\[Npt] separators -- a blank line (e.g. no tagline)
+    # followed by \\ is a LaTeX error ("There's no line here to end"),
+    # not just a cosmetic gap, so an empty line must be skipped entirely
+    # rather than rendered blank.
+    header_lines = [f"{{\\LARGE\\bfseries {escape_latex(content.header.name)}}}"]
+    if content.header.tagline:
+        header_lines.append(escape_latex(content.header.tagline))
+    if contact_line_1:
+        header_lines.append(contact_line_1)
+    if contact_line_2:
+        header_lines.append(contact_line_2)
+    header_block = "\\\\[2pt]\n".join(header_lines)
 
     order = content.section_order or list(_SECTION_RENDERERS.keys())
     body = "\n".join(_SECTION_RENDERERS[s.value](content) for s in order if s.value in _SECTION_RENDERERS)
 
     return (
         template
-        .replace("{{NAME}}", escape_latex(content.header.name))
-        .replace("{{CONTACT_LINE}}", contact_line)
+        .replace("{{HEADER_BLOCK}}", header_block)
         .replace("{{BODY}}", body)
     )
 

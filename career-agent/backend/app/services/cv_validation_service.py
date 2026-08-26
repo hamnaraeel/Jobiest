@@ -44,81 +44,22 @@ def validate_skill_categories(content: CVContentOutput, ctx: ProfileContext) -> 
                 kept.append(skill)
         if kept:
             sanitized.append({"category": cat.category, "skills": kept})
-    return issues, sanitized
 
-
-def validate_bullets(
-    content_bullets: list,
-    valid_source_ids: set[int],
-    original_text_by_id: dict[int, str],
-    known_technologies_by_id: dict[int, set[str]],
-    ctx: ProfileContext,
-    section: str,
-    watch_terms: list[str] = (),
-) -> tuple[list[ValidationIssue], list]:
-    """Validates a list of RewrittenBullet against their real source rows.
-    Returns (issues, sanitized_bullets) where sanitized_bullets is a list
-    of {source_bullet_id, text} -- unsupported metrics/technologies fall
-    back to the verbatim original text rather than being dropped outright,
-    since the underlying fact itself is still true and worth keeping.
-
-    `watch_terms` should include the job's requirement skill names.
-    Without them, "introduced technology" can only be detected when the
-    term happens to already be a *known* profile skill used elsewhere --
-    a wholly invented technology that appears nowhere else in the profile
-    (e.g. the job wants AWS, the profile has zero AWS mentions) would
-    otherwise slip through undetected."""
-
-    issues: list[ValidationIssue] = []
-    sanitized = []
-    watch_normalized = {normalize_skill(t) for t in watch_terms if normalize_skill(t)}
-
-    for bullet in content_bullets:
-        source_id = bullet.source_bullet_id
-        if source_id not in valid_source_ids:
-            issues.append(ValidationIssue(
-                code="UNSUPPORTED_BULLET_SOURCE",
-                message=f"Rewritten bullet references source id {source_id}, which is not part of "
-                        f"the selected career profile item -- discarded.",
-                section=section,
-            ))
-            continue
-
-        original = original_text_by_id[source_id]
-        rewritten = bullet.rewritten_text
-
-        original_numbers = numbers_in(original)
-        rewritten_numbers = numbers_in(rewritten)
-        introduced_numbers = rewritten_numbers - original_numbers
-
-        candidate_terms = set(ctx.skill_index.keys()) | watch_normalized | {
-            normalize_skill(t) for t in known_technologies_by_id.get(source_id, set())
-        }
-        original_tech = matching_terms(original, candidate_terms) | {
-            normalize_skill(t) for t in known_technologies_by_id.get(source_id, set())
-        }
-        rewritten_tech = matching_terms(rewritten, candidate_terms)
-        introduced_tech = rewritten_tech - original_tech
-
-        if introduced_numbers:
-            issues.append(ValidationIssue(
-                code="UNSUPPORTED_METRIC",
-                message=f"Rewrite of bullet {source_id} introduced number(s) {sorted(introduced_numbers)} "
-                        f"not present in the original -- reverted to original text.",
-                section=section,
-            ))
-            rewritten = original
-        elif introduced_tech:
-            issues.append(ValidationIssue(
-                code="UNSUPPORTED_TECHNOLOGY",
-                message=f"Rewrite of bullet {source_id} introduced technology/skill {sorted(introduced_tech)} "
-                        f"not present in the original -- reverted to original text.",
-                section=section,
-            ))
-            rewritten = original
-
-        sanitized.append({"source_bullet_id": source_id, "text": rewritten})
-
+    if not sanitized and any(ev.verified for ev in ctx.skill_index.values()):
+        # The model returned zero skill categories despite the profile
+        # having verified skills to choose from -- this happens
+        # occasionally (a model quality lapse, not a schema/parse error,
+        # so it doesn't surface as an AIResponseError). Flagging it as an
+        # issue routes it through the existing correction-retry in
+        # generate_cv_content() instead of silently shipping a CV with no
+        # Technical Skills section.
+        issues.append(ValidationIssue(
+            code="MISSING_SKILLS",
+            message="No skill categories were selected even though the candidate has verified "
+                    "skills in their profile. Select relevant skill categories/skills from the "
+                    "given verified skill list.",
+            section="skills",
+        ))
     return issues, sanitized
 
 

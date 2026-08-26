@@ -6,7 +6,14 @@ it contains anything unsupported, then deterministically sanitized
 regardless of whether the retry fully fixed it. The score, the source
 traceability, and the final claim of "verified" never depend on what the
 LLM said about itself.
-"""
+
+Tailoring a CV to a specific job is deliberately narrow: the candidate's
+full profile -- every experience, every project, every existing bullet,
+all education/certifications/achievements/research -- is always included,
+verbatim, in assemble_cv_content(). Nothing here ever omits an entry as
+"not relevant enough" or rewrites a bullet's wording. The only things an
+LLM ever authors are (1) which of the candidate's own verified skills to
+surface and (2) the summary -- both per generate_cv_content()."""
 
 import json
 import logging
@@ -16,13 +23,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai.client import STRUCTURED_OUTPUT_MAX_TOKENS, get_ai_client, get_ai_extra_params, get_ai_model
-from app.ai.cv_prompts import (
-    CV_BULLET_REWRITE_PROMPT_V1,
-    CV_PLAN_PROMPT_V1,
-    CV_PROJECT_SELECTION_PROMPT_V1,
-    CV_SKILL_SELECTION_PROMPT_V1,
-    CV_SUMMARY_PROMPT_V1,
-)
+from app.ai.cv_prompts import CV_PLAN_PROMPT_V1, CV_SKILL_SELECTION_PROMPT_V1, CV_SUMMARY_PROMPT_V1
 from app.ai.cv_structured_outputs import CVContentOutput, CVPlanOutput
 from app.config import get_settings
 from app.models.cv_change import CVChange
@@ -45,11 +46,19 @@ from app.schemas.cv import (
 )
 from app.schemas.cv_generation import CVPlan, ValidationIssue
 from app.services import cv_comparison_service, cv_render_service
-from app.services.cv_validation_service import validate_bullets, validate_skill_categories, validate_summary
+from app.services.cv_validation_service import validate_skill_categories, validate_summary
 from app.services.job_matching_service import ProfileContext, compute_match, get_relevant_career_data, lookup_skill
 from app.services.profile_service import get_default_profile
 
 logger = logging.getLogger("app.cv_customization")
+
+# Fixed, not AI-decided -- there is no longer a "which sections earn a
+# place on this CV" question (every section with any profile data is
+# always included), only a stable rendering order.
+DEFAULT_SECTION_ORDER = [
+    CVSectionType.SUMMARY, CVSectionType.SKILLS, CVSectionType.EXPERIENCE, CVSectionType.PROJECTS,
+    CVSectionType.RESEARCH, CVSectionType.EDUCATION, CVSectionType.CERTIFICATIONS, CVSectionType.ACHIEVEMENTS,
+]
 
 
 class CVGenerationInputError(ValueError):
@@ -111,65 +120,40 @@ def _compact_requirements(job: Job) -> list[dict]:
 
 def _compact_profile_for_planning(ctx: ProfileContext) -> dict:
     return {
-        "experiences": [
-            {"id": e.id, "company": e.company, "role": e.role, "technologies": e.technologies, "skills": e.skills}
-            for e in ctx.experiences
-        ],
-        "projects": [
-            {"id": p.id, "name": p.name, "technologies": p.technologies, "skills": p.skills}
-            for p in ctx.projects
-        ],
-        "research": [
-            {"id": r.id, "title": r.title, "research_area": r.research_area, "technologies": r.technologies}
-            for r in ctx.research_items
-        ],
+        "experiences": [{"company": e.company, "role": e.role, "technologies": e.technologies, "skills": e.skills} for e in ctx.experiences],
+        "projects": [{"name": p.name, "technologies": p.technologies, "skills": p.skills} for p in ctx.projects],
         "verified_skills": sorted(name for name, ev in ctx.skill_index.items() if ev.verified),
     }
 
 
 def generate_cv_plan(client, model: str, job: Job, ctx: ProfileContext) -> CVPlan:
-    system_prompt = CV_PLAN_PROMPT_V1 + "\n\n---\n\n" + CV_PROJECT_SELECTION_PROMPT_V1
     payload = json.dumps({
         "job": {"title": job.title, "company": job.company, "requirements": _compact_requirements(job)},
         "profile": _compact_profile_for_planning(ctx),
     })
-    output: CVPlanOutput = _call_structured(client, model, system_prompt, payload, CVPlanOutput)
-
-    valid_experience_ids = {e.id for e in ctx.experiences}
-    valid_project_ids = {p.id for p in ctx.projects}
-    valid_research_ids = {r.id for r in ctx.research_items}
-    valid_sections = {s.value for s in CVSectionType}
+    output: CVPlanOutput = _call_structured(client, model, CV_PLAN_PROMPT_V1, payload, CVPlanOutput)
 
     return CVPlan(
         target_role=output.target_role or (job.title or "the target role"),
         priority_skills=[s for s in output.priority_skills if lookup_skill(ctx, s) is not None],
-        selected_experience_ids=[i for i in output.selected_experience_ids if i in valid_experience_ids],
-        selected_project_ids=[i for i in output.selected_project_ids if i in valid_project_ids],
-        selected_research_ids=[i for i in output.selected_research_ids if i in valid_research_ids],
-        sections=[CVSectionType(s) for s in output.sections if s in valid_sections],
         reasoning=output.reasoning,
     )
 
 
-def _compact_selected_for_content(ctx: ProfileContext, plan: CVPlan) -> dict:
-    experiences = [e for e in ctx.experiences if e.id in plan.selected_experience_ids]
-    projects = [p for p in ctx.projects if p.id in plan.selected_project_ids]
+def _compact_profile_for_content(ctx: ProfileContext, plan: CVPlan) -> dict:
+    """Unlike the planning payload, no ids are needed here -- there is no
+    selection step left to reference them. Skill selection and the
+    summary are the only things this call produces."""
     return {
         "priority_skills": plan.priority_skills,
         "verified_skills": sorted(name for name, ev in ctx.skill_index.items() if ev.verified),
         "experiences": [
-            {
-                "id": e.id, "company": e.company, "role": e.role, "technologies": e.technologies,
-                "bullets": [{"id": b.id, "text": b.bullet, "skills": b.skills} for b in e.bullets],
-            }
-            for e in experiences
+            {"company": e.company, "role": e.role, "technologies": e.technologies, "bullets": [b.bullet for b in e.bullets]}
+            for e in ctx.experiences
         ],
         "projects": [
-            {
-                "id": p.id, "name": p.name, "technologies": p.technologies,
-                "results": [{"id": r.id, "description": r.description, "metric": r.metric} for r in p.results],
-            }
-            for p in projects
+            {"name": p.name, "technologies": p.technologies, "results": [r.description for r in p.results]}
+            for p in ctx.projects
         ],
     }
 
@@ -181,65 +165,16 @@ def _validate_content(content: CVContentOutput, ctx: ProfileContext, job: Job, p
     skill_issues, sanitized_skills = validate_skill_categories(content, ctx)
     issues += skill_issues
 
-    exp_by_id = {e.id: e for e in ctx.experiences}
-    sanitized_experience: dict[int, list[dict]] = {}
-    for exp_content in content.experience:
-        exp = exp_by_id.get(exp_content.experience_id)
-        if exp is None:
-            issues.append(ValidationIssue(
-                code="UNSUPPORTED_EXPERIENCE_SOURCE",
-                message=f"Content references experience id {exp_content.experience_id}, which was not selected.",
-                section="experience",
-            ))
-            continue
-        valid_ids = {b.id for b in exp.bullets}
-        original_by_id = {b.id: b.bullet for b in exp.bullets}
-        known_tech_by_id = {b.id: set(b.skills) | set(exp.technologies) | set(exp.skills) for b in exp.bullets}
-        bullet_issues, sanitized_bullets = validate_bullets(
-            exp_content.bullets, valid_ids, original_by_id, known_tech_by_id, ctx, "experience", watch_terms
-        )
-        issues += bullet_issues
-        sanitized_experience[exp.id] = sanitized_bullets
-
-    proj_by_id = {p.id: p for p in ctx.projects}
-    sanitized_projects: dict[int, list[dict]] = {}
-    for proj_content in content.projects:
-        proj = proj_by_id.get(proj_content.project_id)
-        if proj is None:
-            issues.append(ValidationIssue(
-                code="UNSUPPORTED_PROJECT_SOURCE",
-                message=f"Content references project id {proj_content.project_id}, which was not selected.",
-                section="projects",
-            ))
-            continue
-        valid_ids = {r.id for r in proj.results}
-        # A ProjectResult's quantified achievement lives in `metric`,
-        # separate from `description` (Step 1's design: "results stored
-        # separately so a CV agent can choose relevant quantified
-        # achievements"). A rewrite combining both is not introducing a
-        # new number -- it's using the number that was always there.
-        original_by_id = {r.id: f"{r.description} {r.metric or ''}".strip() for r in proj.results}
-        known_tech_by_id = {r.id: set(proj.technologies) | set(proj.skills) for r in proj.results}
-        bullet_issues, sanitized_bullets = validate_bullets(
-            proj_content.bullets, valid_ids, original_by_id, known_tech_by_id, ctx, "projects", watch_terms
-        )
-        issues += bullet_issues
-        sanitized_projects[proj.id] = sanitized_bullets
-
     issues += validate_summary(content.summary, ctx, watch_terms)
 
-    return issues, {
-        "skills": sanitized_skills,
-        "experience": sanitized_experience,
-        "projects": sanitized_projects,
-    }
+    return issues, {"skills": sanitized_skills}
 
 
 def generate_cv_content(client, model: str, job: Job, plan: CVPlan, ctx: ProfileContext) -> tuple[CVContentOutput, dict, list[ValidationIssue]]:
-    system_prompt = CV_SUMMARY_PROMPT_V1 + "\n\n---\n\n" + CV_BULLET_REWRITE_PROMPT_V1 + "\n\n---\n\n" + CV_SKILL_SELECTION_PROMPT_V1
+    system_prompt = CV_SUMMARY_PROMPT_V1 + "\n\n---\n\n" + CV_SKILL_SELECTION_PROMPT_V1
     payload = json.dumps({
         "job": {"title": job.title, "company": job.company, "target_role": plan.target_role},
-        "selected_profile": _compact_selected_for_content(ctx, plan),
+        "profile": _compact_profile_for_content(ctx, plan),
     })
 
     output = _call_structured(client, model, system_prompt, payload, CVContentOutput)
@@ -249,7 +184,7 @@ def generate_cv_content(client, model: str, job: Job, plan: CVPlan, ctx: Profile
         correction = (
             "The following items were rejected as unsupported by the career profile and must not "
             "appear in a corrected response: " + "; ".join(i.message for i in issues) +
-            ". Regenerate using only the given profile data, referencing only the given bullet/result ids."
+            ". Regenerate using only the given profile data."
         )
         output = _call_structured(client, model, system_prompt, payload + "\n\nCORRECTION:\n" + correction, CVContentOutput)
         issues, sanitized = _validate_content(output, ctx, job, plan)
@@ -257,11 +192,29 @@ def generate_cv_content(client, model: str, job: Job, plan: CVPlan, ctx: Profile
     return output, sanitized, issues
 
 
+# Deterministic (not AI-decided): a project's own already-recorded skill
+# tags are what put it in "Research & ML" vs "Engineering & Full-Stack" on
+# the rendered CV -- grouping never depends on the job being applied to,
+# so which category a project lands in never changes between generations.
+_RESEARCH_ML_SKILL_TAGS = {"ml/dl", "nlp", "computer vision", "llm"}
+
+
+def _project_category(proj) -> str:
+    tags = {s.lower() for s in proj.skills}
+    if tags & _RESEARCH_ML_SKILL_TAGS:
+        return "Research & ML"
+    return "Engineering & Full-Stack"
+
+
 def _cv_header(ctx: ProfileContext) -> CVHeader:
     profile = ctx.profile
     location = ", ".join(filter(None, [profile.city, profile.country])) or None
     return CVHeader(
         name=profile.full_name,
+        # The candidate's own stated title -- never the AI-tailored
+        # target_role, which could otherwise put a job posting's exact
+        # wording directly under the candidate's name unsupported.
+        tagline=profile.professional_title,
         email=profile.email,
         phone=profile.phone,
         linkedin=profile.linkedin_url,
@@ -272,52 +225,46 @@ def _cv_header(ctx: ProfileContext) -> CVHeader:
 
 
 def assemble_cv_content(job: Job, plan: CVPlan, content: CVContentOutput, sanitized: dict, ctx: ProfileContext) -> CVContent:
-    exp_by_id = {e.id: e for e in ctx.experiences}
-    proj_by_id = {p.id: p for p in ctx.projects}
-    bullet_verified_by_id = {b.id: b.verified for e in ctx.experiences for b in e.bullets}
-    result_verified_by_id = {r.id: r.verified for p in ctx.projects for r in p.results}
+    """The candidate's full profile, always -- every experience (with
+    every bullet), every project (with every result), all research/
+    education/certifications/achievements, verbatim. Tailoring to `job`
+    touches only `content.summary` and the skill selection in
+    `sanitized["skills"]`; nothing here ever omits or reorders a
+    profile entry based on the job."""
 
-    experience_entries = []
-    for exp_id in plan.selected_experience_ids:
-        exp = exp_by_id.get(exp_id)
-        bullets = sanitized["experience"].get(exp_id, [])
-        if exp is None or not bullets:
-            continue
-        experience_entries.append(CVExperienceEntry(
+    experience_entries = [
+        CVExperienceEntry(
             experience_id=exp.id, company=exp.company, role=exp.role, location=exp.location,
             start_date=exp.start_date, end_date=exp.end_date, currently_working=exp.currently_working,
             bullets=[
-                CVBullet(
-                    text=b["text"], source_type=EntityType.EXPERIENCE_BULLET, source_id=b["source_bullet_id"],
-                    verified=bullet_verified_by_id.get(b["source_bullet_id"], False),
-                )
-                for b in bullets
+                CVBullet(text=b.bullet, source_type=EntityType.EXPERIENCE_BULLET, source_id=b.id, verified=b.verified)
+                for b in exp.bullets
             ],
-        ))
+        )
+        for exp in ctx.experiences
+    ]
 
-    project_entries = []
-    for proj_id in plan.selected_project_ids:
-        proj = proj_by_id.get(proj_id)
-        bullets = sanitized["projects"].get(proj_id, [])
-        if proj is None:
-            continue
-        project_entries.append(CVProjectEntry(
-            project_id=proj.id, name=proj.name, technologies=proj.technologies, github_url=proj.github_url,
+    project_entries = [
+        CVProjectEntry(
+            project_id=proj.id, name=proj.name, category=_project_category(proj),
+            technologies=proj.technologies, github_url=proj.github_url,
             bullets=[
                 CVBullet(
-                    text=b["text"], source_type=EntityType.PROJECT_RESULT, source_id=b["source_bullet_id"],
-                    verified=result_verified_by_id.get(b["source_bullet_id"], False),
+                    text=f"{r.description} {r.metric or ''}".strip(),
+                    source_type=EntityType.PROJECT_RESULT, source_id=r.id, verified=r.verified,
                 )
-                for b in bullets
+                for r in proj.results
             ],
-        ))
+        )
+        for proj in ctx.projects
+    ]
 
     research_entries = [
         CVResearchEntry(
             research_id=r.id, title=r.title, research_area=r.research_area,
             technologies=r.technologies, description=r.description,
         )
-        for r in ctx.research_items if r.id in plan.selected_research_ids
+        for r in ctx.research_items
     ]
 
     education_entries = [
@@ -326,17 +273,17 @@ def assemble_cv_content(job: Job, plan: CVPlan, content: CVContentOutput, saniti
             start_date=e.start_date, end_date=e.end_date, grade=e.grade,
         )
         for e in ctx.educations
-    ] if CVSectionType.EDUCATION in plan.sections else []
+    ]
 
     certification_entries = [
         CVCertificationEntry(certification_id=c.id, name=c.name, issuer=c.issuer, issue_date=c.issue_date)
         for c in ctx.certifications
-    ] if CVSectionType.CERTIFICATIONS in plan.sections else []
+    ]
 
     achievement_entries = [
         CVAchievementEntry(achievement_id=a.id, title=a.title, description=a.description, metric=a.metric)
         for a in ctx.achievements
-    ] if CVSectionType.ACHIEVEMENTS in plan.sections else []
+    ]
 
     return CVContent(
         header=_cv_header(ctx),
@@ -348,7 +295,7 @@ def assemble_cv_content(job: Job, plan: CVPlan, content: CVContentOutput, saniti
         education=education_entries,
         certifications=certification_entries,
         achievements=achievement_entries,
-        section_order=plan.sections,
+        section_order=DEFAULT_SECTION_ORDER,
     )
 
 
@@ -366,9 +313,10 @@ def _fallback_summary(plan: CVPlan, ctx: ProfileContext) -> str:
 
 
 def generate_cv(db: Session, job: Job, template_name: str = "ats/ml_engineer", compile_pdf_flag: bool = True) -> CVVersion:
-    """The full Step 3 pipeline: JOB -> JOB MATCH -> CAREER PROFILE ->
-    select relevant evidence -> CV plan -> CV content -> validate -> reject
-    unsupported claims -> LaTeX -> PDF -> store CV version."""
+    """The full Step 3 pipeline: JOB -> JOB MATCH -> CAREER PROFILE (in
+    full) -> CV plan (framing only) -> CV content (summary + skill
+    selection) -> validate -> reject unsupported claims -> LaTeX -> PDF ->
+    store CV version."""
 
     profile = get_default_profile(db)
     if profile is None:

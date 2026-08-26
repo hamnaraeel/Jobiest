@@ -51,7 +51,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     lifespan=lifespan,
-    title="Career Agent",
+    title="Jobiest",
     description=(
         "Single source of truth for verified career facts, job ingestion/analysis/"
         "matching, truthful source-traceable CV customization, locally-generated "

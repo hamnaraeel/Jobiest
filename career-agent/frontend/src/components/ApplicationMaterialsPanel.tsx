@@ -125,8 +125,13 @@ export default function ApplicationMaterialsPanel({ jobId, existingApplicationId
               )}
               <div className="flex flex-wrap gap-2">
                 {cv.pdf_path && (
+                  <a href={`/api/cvs/${cv.id}/preview`} target="_blank" rel="noreferrer">
+                    <Button variant="secondary">Preview</Button>
+                  </a>
+                )}
+                {cv.pdf_path && (
                   <a href={`/api/cvs/${cv.id}/download`} target="_blank" rel="noreferrer">
-                    <Button variant="secondary">Download PDF</Button>
+                    <Button variant="ghost">Download PDF</Button>
                   </a>
                 )}
                 {cvReadyToApprove && (

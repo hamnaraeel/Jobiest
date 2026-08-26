@@ -18,6 +18,7 @@ class CVBullet(BaseModel):
 
 class CVHeader(BaseModel):
     name: str
+    tagline: str | None = None
     email: str
     phone: str | None = None
     linkedin: str | None = None
@@ -45,6 +46,7 @@ class CVExperienceEntry(BaseModel):
 class CVProjectEntry(BaseModel):
     project_id: int
     name: str
+    category: str
     technologies: list[str] = Field(default_factory=list)
     github_url: str | None = None
     bullets: list[CVBullet] = Field(default_factory=list)

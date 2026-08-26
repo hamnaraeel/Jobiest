@@ -1,15 +1,9 @@
 from unittest.mock import MagicMock
 
-from app.ai.cv_structured_outputs import (
-    CVContentOutput,
-    CVPlanOutput,
-    ExperienceContentOutput,
-    ProjectContentOutput,
-    RewrittenBullet,
-    SkillCategoryOutput,
-)
+from app.ai.cv_structured_outputs import CVContentOutput, CVPlanOutput, SkillCategoryOutput
 from app.models.cv_change import CVChange
 from app.models.enums import CVStatus
+from app.schemas.cv_generation import CVPlan
 from app.services import cv_comparison_service
 from app.services.job_matching_service import get_relevant_career_data
 
@@ -30,28 +24,10 @@ def _fake_client(*parsed_in_order):
 
 
 def _plan_and_content(rich_profile):
-    from app.ai.cv_structured_outputs import CVPlanOutput
-    exp_id = rich_profile["experience"]["id"]
-    proj_id = rich_profile["project"]["id"]
-    bullet_id = rich_profile["experience"]["bullets"][0]["id"]
-    result_id = rich_profile["project"]["results"][0]["id"]
-
-    plan_output = CVPlanOutput(
-        target_role="Machine Learning Engineer", priority_skills=["PyTorch"],
-        selected_experience_ids=[exp_id], selected_project_ids=[proj_id], selected_research_ids=[],
-        sections=["summary", "skills", "experience", "projects"], reasoning="Relevant.",
-    )
+    plan_output = CVPlanOutput(target_role="Machine Learning Engineer", priority_skills=["PyTorch"], reasoning="Relevant.")
     content_output = CVContentOutput(
         summary="Machine Learning Engineer with experience in PyTorch.",
         skill_categories=[SkillCategoryOutput(category="ML/DL", skills=["PyTorch"])],
-        experience=[ExperienceContentOutput(
-            experience_id=exp_id,
-            bullets=[RewrittenBullet(source_bullet_id=bullet_id, rewritten_text="Built PyTorch segmentation models.")],
-        )],
-        projects=[ProjectContentOutput(
-            project_id=proj_id,
-            bullets=[RewrittenBullet(source_bullet_id=result_id, rewritten_text="Improved segmentation accuracy")],
-        )],
     )
     return plan_output, content_output
 
@@ -64,17 +40,8 @@ def test_build_cv_changes_flags_emphasized_and_deemphasized_skills(client, rich_
     client.post("/skills", json={"profile_id": rich_profile["profile"]["id"], "name": "Excel", "category": "Tool", "verified": True})
 
     ctx = get_relevant_career_data(db_session, rich_profile["profile"]["id"])
-    from app.schemas.cv_generation import CVPlan
-    plan = CVPlan(
-        target_role="Machine Learning Engineer", priority_skills=["PyTorch"],
-        selected_experience_ids=[], selected_project_ids=[], selected_research_ids=[],
-        sections=["summary", "skills"], reasoning="x",
-    )
-    sanitized = {
-        "summary": "New summary text.",
-        "skills": [{"category": "ML/DL", "skills": ["PyTorch"]}],
-        "experience": {}, "projects": {},
-    }
+    plan = CVPlan(target_role="Machine Learning Engineer", priority_skills=["PyTorch"], reasoning="x")
+    sanitized = {"summary": "New summary text.", "skills": [{"category": "ML/DL", "skills": ["PyTorch"]}]}
 
     changes = cv_comparison_service.build_cv_changes(plan, sanitized, ctx)
     change_types_by_section = {(c.change_type.value, c.section.value, c.original_text, c.customized_text) for c in changes}
@@ -86,23 +53,8 @@ def test_build_cv_changes_flags_emphasized_and_deemphasized_skills(client, rich_
 
 def test_comparison_response_aggregates_changes(client, rich_profile, db_session):
     ctx = get_relevant_career_data(db_session, rich_profile["profile"]["id"])
-    from app.schemas.cv_generation import CVPlan
-    plan = CVPlan(
-        target_role="Machine Learning Engineer", priority_skills=["PyTorch"],
-        selected_experience_ids=[rich_profile["experience"]["id"]],
-        selected_project_ids=[rich_profile["project"]["id"]], selected_research_ids=[],
-        sections=["summary", "skills", "experience", "projects"], reasoning="x",
-    )
-    sanitized = {
-        "summary": "New summary text.",
-        "skills": [{"category": "ML/DL", "skills": ["PyTorch"]}],
-        "experience": {rich_profile["experience"]["id"]: [
-            {"source_bullet_id": rich_profile["experience"]["bullets"][0]["id"], "text": "Rewritten bullet text."}
-        ]},
-        "projects": {rich_profile["project"]["id"]: [
-            {"source_bullet_id": rich_profile["project"]["results"][0]["id"], "text": "Rewritten result text."}
-        ]},
-    }
+    plan = CVPlan(target_role="Machine Learning Engineer", priority_skills=["PyTorch"], reasoning="x")
+    sanitized = {"summary": "New summary text.", "skills": [{"category": "ML/DL", "skills": ["PyTorch"]}]}
     changes = cv_comparison_service.build_cv_changes(plan, sanitized, ctx)
 
     from app.models.job import Job
