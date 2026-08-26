@@ -220,37 +220,47 @@ def confirm_import(db: Session, resume_import: ResumeImport, profile_id: int | N
             return na == nb
         return na == nb or na.startswith(nb) or nb.startswith(na)
 
-    existing_skill_names = {_norm(n) for n in db.execute(select(Skill.name).where(Skill.profile_id == profile.id)).scalars()}
-    existing_experiences = list(
-        db.execute(select(Experience.company, Experience.role, Experience.start_date).where(Experience.profile_id == profile.id))
-    )
-    existing_educations = list(db.execute(select(Education.institution, Education.degree).where(Education.profile_id == profile.id)))
+    # Plain tuples/lists (not sets) on purpose -- each is appended to as
+    # new rows are added below, so a single resume parse that itself
+    # repeats an entry twice (the AI's own output, not a separate import)
+    # is also caught, not just duplicates against what the DB already had.
+    existing_skill_names = list(db.execute(select(Skill.name).where(Skill.profile_id == profile.id)).scalars())
+    existing_experiences = [
+        (row.company, row.role, row.start_date)
+        for row in db.execute(select(Experience.company, Experience.role, Experience.start_date).where(Experience.profile_id == profile.id))
+    ]
+    existing_educations = [
+        (row.institution, row.degree)
+        for row in db.execute(select(Education.institution, Education.degree).where(Education.profile_id == profile.id))
+    ]
     existing_project_names = list(db.execute(select(Project.name).where(Project.profile_id == profile.id)).scalars())
-    existing_certifications = list(
-        db.execute(select(Certification.name, Certification.issuer).where(Certification.profile_id == profile.id))
-    )
+    existing_certifications = [
+        (row.name, row.issuer)
+        for row in db.execute(select(Certification.name, Certification.issuer).where(Certification.profile_id == profile.id))
+    ]
     existing_achievement_titles = list(db.execute(select(Achievement.title).where(Achievement.profile_id == profile.id)).scalars())
     existing_research_titles = list(db.execute(select(Research.title).where(Research.profile_id == profile.id)).scalars())
 
     for s in data.skills:
-        if _norm(s.name) in existing_skill_names:
+        if any(_norm(s.name) == existing for existing in existing_skill_names):
             continue
         db.add(Skill(
             profile_id=profile.id, name=s.name, category=_safe_enum(SkillCategory, s.category, SkillCategory.OTHER),
             proficiency=_safe_enum(ProficiencyLevel, s.proficiency), years_used=s.years_used, verified=False,
         ))
+        existing_skill_names.append(_norm(s.name))
 
     for e in data.experience:
         e_start = _parse_date(e.start_date)
         if any(
-            _name_matches(e.company, existing.company) and _norm(e.role) == _norm(existing.role) and e_start == existing.start_date
-            for existing in existing_experiences
+            _name_matches(e.company, company) and _norm(e.role) == _norm(role) and e_start == start
+            for company, role, start in existing_experiences
         ):
             continue
         experience = Experience(
             profile_id=profile.id, company=e.company, role=e.role,
             employment_type=_safe_enum(EmploymentType, e.employment_type), location=e.location,
-            start_date=_parse_date(e.start_date), end_date=_parse_date(e.end_date),
+            start_date=e_start, end_date=_parse_date(e.end_date),
             currently_working=e.currently_working, description=e.description,
             technologies=e.technologies, skills=e.skills, verified=False,
         )
@@ -258,11 +268,12 @@ def confirm_import(db: Session, resume_import: ResumeImport, profile_id: int | N
         db.flush()
         for b in e.bullets:
             db.add(ExperienceBullet(experience_id=experience.id, bullet=b.bullet, skills=b.skills, verified=False))
+        existing_experiences.append((e.company, e.role, e_start))
 
     for ed in data.education:
         if any(
-            _name_matches(ed.institution, existing.institution) and _norm(ed.degree) == _norm(existing.degree)
-            for existing in existing_educations
+            _name_matches(ed.institution, institution) and _norm(ed.degree) == _norm(degree)
+            for institution, degree in existing_educations
         ):
             continue
         db.add(Education(
@@ -270,6 +281,7 @@ def confirm_import(db: Session, resume_import: ResumeImport, profile_id: int | N
             start_date=_parse_date(ed.start_date), end_date=_parse_date(ed.end_date),
             location=ed.location, grade=ed.grade, verified=False,
         ))
+        existing_educations.append((ed.institution, ed.degree))
 
     for p in data.projects:
         if any(_name_matches(p.name, existing) for existing in existing_project_names):
@@ -282,14 +294,16 @@ def confirm_import(db: Session, resume_import: ResumeImport, profile_id: int | N
         db.flush()
         for r in p.results:
             db.add(ProjectResult(project_id=project.id, description=r.description, metric=r.metric, verified=False))
+        existing_project_names.append(p.name)
 
     for c in data.certifications:
-        if any(_name_matches(c.name, existing.name) and _norm(c.issuer) == _norm(existing.issuer) for existing in existing_certifications):
+        if any(_name_matches(c.name, name) and _norm(c.issuer) == _norm(issuer) for name, issuer in existing_certifications):
             continue
         db.add(Certification(
             profile_id=profile.id, name=c.name, issuer=c.issuer,
             issue_date=_parse_date(c.issue_date), credential_url=c.credential_url, verified=False,
         ))
+        existing_certifications.append((c.name, c.issuer))
 
     for a in data.achievements:
         if any(_name_matches(a.title, existing) for existing in existing_achievement_titles):
@@ -298,11 +312,13 @@ def confirm_import(db: Session, resume_import: ResumeImport, profile_id: int | N
             profile_id=profile.id, title=a.title, description=a.description,
             category=_safe_enum(AchievementCategory, a.category, AchievementCategory.PROFESSIONAL), verified=False,
         ))
+        existing_achievement_titles.append(a.title)
 
     for r in data.research:
         if any(_name_matches(r.title, existing) for existing in existing_research_titles):
             continue
         db.add(Research(profile_id=profile.id, title=r.title, description=r.description, research_area=r.research_area, verified=False))
+        existing_research_titles.append(r.title)
 
     resume_import.status = ResumeImportStatus.CONFIRMED
     resume_import.confirmed_at = datetime.now(timezone.utc)

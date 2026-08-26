@@ -23,3 +23,7 @@ export const searchJobs = (params: JobSearchParams = {}) => {
 export const getJob = (id: number) => api.get<JobRead>(`/jobs/${id}`)
 export const getJobIntelligence = (id: number) => api.get<JobIntelligenceResponse>(`/intelligence/jobs/${id}`)
 export const archiveJob = (id: number) => api.post<JobRead>(`/jobs/${id}/archive`)
+// Auto-analyzes the job first if that hasn't happened yet -- the one call
+// needed before cv.generate/cover_letter.generate will accept a job that
+// was only ever discovered, never analyzed.
+export const matchJob = (id: number) => api.post(`/jobs/${id}/match`)

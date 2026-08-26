@@ -15,7 +15,10 @@ os.environ.setdefault("DRY_RUN", "true")
 # groq (with a real GROQ_API_KEY) for day-to-day local use.
 os.environ["AI_PROVIDER"] = "openai"
 
+from urllib.parse import urlsplit, urlunsplit
+
 import pytest
+import sqlalchemy
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -27,7 +30,40 @@ from app.db.database import get_db
 from app.main import app as fastapi_app
 
 settings = get_settings()
-engine = create_engine(settings.database_url, future=True)
+
+
+def _test_database_url(url: str) -> str:
+    """Never run tests against the same database the real app/dev
+    environment uses -- this fixture file calls Base.metadata.drop_all()
+    at both setup and teardown, which previously wiped a real dev
+    database (including a live user's Career Profile, jobs, and
+    applications) because DATABASE_URL in .env pointed at it directly.
+    Tests always run against "<dbname>_test" instead, created
+    automatically if it doesn't exist yet, regardless of what a
+    developer's own .env happens to point at."""
+
+    parts = urlsplit(url)
+    base_name = parts.path.lstrip("/")
+    if not base_name:
+        raise RuntimeError(f"DATABASE_URL has no database name to derive a test database from: {url}")
+    test_name = f"{base_name}_test"
+
+    maintenance_url = urlunsplit((parts.scheme, parts.netloc, "/postgres", "", ""))
+    maintenance_engine = create_engine(maintenance_url, future=True, isolation_level="AUTOCOMMIT")
+    try:
+        with maintenance_engine.connect() as conn:
+            exists = conn.execute(
+                sqlalchemy.text("SELECT 1 FROM pg_database WHERE datname = :name"), {"name": test_name}
+            ).scalar()
+            if not exists:
+                conn.execute(sqlalchemy.text(f'CREATE DATABASE "{test_name}"'))
+    finally:
+        maintenance_engine.dispose()
+
+    return urlunsplit((parts.scheme, parts.netloc, f"/{test_name}", "", ""))
+
+
+engine = create_engine(_test_database_url(settings.database_url), future=True)
 TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, future=True)
 
 

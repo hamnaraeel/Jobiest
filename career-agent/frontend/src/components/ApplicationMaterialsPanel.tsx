@@ -4,6 +4,7 @@ import { approveCv, generateCv, getCv } from '../api/cvs'
 import { approveCoverLetter, generateCoverLetter, getCoverLetter, regenerateCoverLetter } from '../api/coverLetters'
 import { getApplicationMaterials } from '../api/materials'
 import { applyToJob } from '../api/applications'
+import { matchJob } from '../api/jobs'
 import { useApi } from '../hooks/useApi'
 import Card from './Card'
 import Button from './Button'
@@ -56,6 +57,17 @@ export default function ApplicationMaterialsPanel({ jobId, existingApplicationId
     }
   }
 
+  // cv.generate requires the job to already have extracted requirements
+  // ("analyzed") -- a job that only ever went through discovery, never
+  // through the agent's search/rank pipeline, doesn't have those yet.
+  // jobs.match auto-analyzes first if needed, so running it before
+  // cv.generate makes "Generate CV" work from a job detail page directly
+  // instead of surfacing a confusing "analyze it first" error.
+  const handleGenerateCv = () => run('cv.generate', async () => {
+    if (!materials?.match) await matchJob(jobId)
+    return generateCv(jobId)
+  })
+
   const handleApply = async () => {
     setBusy('apply')
     setActionError(null)
@@ -89,7 +101,7 @@ export default function ApplicationMaterialsPanel({ jobId, existingApplicationId
             {materials.cv && <Badge color={materialBadgeColor(materials.cv.status)}>{materials.cv.status}</Badge>}
           </div>
           {!materials.cv && (
-            <Button variant="primary" disabled={busy !== null} onClick={() => run('cv.generate', () => generateCv(jobId))}>
+            <Button variant="primary" disabled={busy !== null} onClick={handleGenerateCv}>
               {busy === 'cv.generate' ? 'Generating…' : 'Generate CV'}
             </Button>
           )}
@@ -122,7 +134,7 @@ export default function ApplicationMaterialsPanel({ jobId, existingApplicationId
                     {busy === 'cv.approve' ? 'Approving…' : 'Approve CV'}
                   </Button>
                 )}
-                <Button variant="ghost" disabled={busy !== null} onClick={() => run('cv.generate', () => generateCv(jobId))}>
+                <Button variant="ghost" disabled={busy !== null} onClick={handleGenerateCv}>
                   {busy === 'cv.generate' ? 'Regenerating…' : 'Regenerate'}
                 </Button>
               </div>
