@@ -28,6 +28,9 @@ _SOURCE_INFO = {
     "weworkremotely": (False, "Searches all listings, filtered by your target roles. No key required."),
     "adzuna": (True, "Free keyword+location search. Requires ADZUNA_APP_ID and ADZUNA_APP_KEY."),
     "usajobs": (True, "Free keyword+location search of U.S. federal roles. Requires USAJOBS_API_KEY and USAJOBS_USER_AGENT_EMAIL."),
+    "remotive": (False, "Real keyword search across all-remote listings. No key required."),
+    "arbeitnow": (False, "Searches all listings, filtered by your target roles. No key required."),
+    "himalayas": (False, "Real keyword+location search across all-remote listings. No key required."),
 }
 
 
@@ -81,6 +84,9 @@ def list_discovery_sources():
         "weworkremotely": True,
         "adzuna": bool(settings.adzuna_app_id and settings.adzuna_app_key),
         "usajobs": bool(settings.usajobs_api_key and settings.usajobs_user_agent_email),
+        "remotive": True,
+        "arbeitnow": True,
+        "himalayas": True,
     }
     return [
         DiscoverySourceStatus(source=source, configured=configured[source], requires_api_key=_SOURCE_INFO[source][0], note=_SOURCE_INFO[source][1])

@@ -402,9 +402,10 @@ class RecommendationStatus(str, enum.Enum):
 
 
 class DiscoverySource(str, enum.Enum):
-    """LinkedIn and Indeed are deliberately absent -- both prohibit
-    automated access in their ToS and run active anti-bot enforcement.
-    Those stay a manual paste/URL flow through Step 2's ingest_job."""
+    """LinkedIn, Indeed, SimplyHired, and Wellfound are deliberately
+    absent -- all four prohibit automated access in their ToS and run
+    active anti-bot enforcement. Those stay a manual paste/URL flow
+    through Step 2's ingest_job."""
 
     GREENHOUSE = "greenhouse"
     LEVER = "lever"
@@ -412,6 +413,9 @@ class DiscoverySource(str, enum.Enum):
     WEWORKREMOTELY = "weworkremotely"
     ADZUNA = "adzuna"
     USAJOBS = "usajobs"
+    REMOTIVE = "remotive"
+    ARBEITNOW = "arbeitnow"
+    HIMALAYAS = "himalayas"
 
 
 class DiscoveryTrigger(str, enum.Enum):

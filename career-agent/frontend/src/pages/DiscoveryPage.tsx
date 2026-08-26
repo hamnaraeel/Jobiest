@@ -14,6 +14,9 @@ const SOURCE_LABELS: Record<string, string> = {
   weworkremotely: 'We Work Remotely',
   adzuna: 'Adzuna',
   usajobs: 'USAJobs',
+  remotive: 'Remotive',
+  arbeitnow: 'Arbeitnow',
+  himalayas: 'Himalayas',
 }
 
 function SourceCard({ source, configured, requiresApiKey, note }: { source: string; configured: boolean; requiresApiKey: boolean; note: string }) {
@@ -83,9 +86,9 @@ export default function DiscoveryPage() {
           <h1 className="gradient-text text-3xl font-bold tracking-tight">Discovery</h1>
           <p className="mt-1 text-sm text-slate-400">
             Searches public job sources using your target roles, locations, and companies (configured via
-            your career profile and job-search goals) and stores new matches as jobs. LinkedIn and Indeed
-            aren't included -- both prohibit automated scraping, so those stay a manual paste/URL flow on
-            the Jobs page.
+            your career profile and job-search goals) and stores new matches as jobs. LinkedIn, Indeed,
+            SimplyHired, and Wellfound aren't included -- all four prohibit automated scraping, so those
+            stay a manual paste/URL flow on the Jobs page.
           </p>
         </div>
         <Button variant="primary" onClick={handleRun} disabled={running} className="shrink-0 whitespace-nowrap">

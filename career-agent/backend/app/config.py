@@ -58,12 +58,16 @@ class Settings(BaseSettings):
     default_followup_days: int = 7
     timezone: str = "UTC"
 
-    # Step 2b: job discovery. Greenhouse/Lever/RemoteOK/WWR need no key at
-    # all; Adzuna and USAJobs are free but keyed -- leave their keys blank
-    # to simply skip those two sources (reported, not a hard failure).
-    # LinkedIn/Indeed are deliberately absent: both prohibit automated
-    # scraping in their ToS, so they stay a manual paste/URL flow (Step 2).
-    discovery_enabled_sources: list[str] = ["greenhouse", "lever", "remoteok", "weworkremotely", "adzuna", "usajobs"]
+    # Step 2b: job discovery. Greenhouse/Lever/RemoteOK/WWR/Remotive/
+    # Arbeitnow/Himalayas need no key at all; Adzuna and USAJobs are free
+    # but keyed -- leave their keys blank to simply skip those two sources
+    # (reported, not a hard failure). LinkedIn/Indeed/SimplyHired/Wellfound
+    # are deliberately absent: all four prohibit automated scraping in
+    # their ToS, so they stay a manual paste/URL flow (Step 2).
+    discovery_enabled_sources: list[str] = [
+        "greenhouse", "lever", "remoteok", "weworkremotely", "adzuna", "usajobs",
+        "remotive", "arbeitnow", "himalayas",
+    ]
     discovery_max_results_per_source: int = 25
     adzuna_app_id: str = ""
     adzuna_app_key: str = ""

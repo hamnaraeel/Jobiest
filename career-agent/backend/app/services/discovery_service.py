@@ -1,11 +1,12 @@
 """Step 8: Job Discovery orchestration.
 
 Searches the enabled public, ToS-compliant job sources (Greenhouse/Lever
-company boards, RemoteOK, We Work Remotely, Adzuna, USAJobs) using the
-career profile's target roles/locations and the job-search goal's target
-companies (Step 7), then stores results through the same dedup-aware
-ingest path Step 2 uses for manually-added jobs. Deliberately excludes
-LinkedIn and Indeed -- see app/discovery/base.py for why.
+company boards, RemoteOK, We Work Remotely, Adzuna, USAJobs, Remotive,
+Arbeitnow, Himalayas) using the career profile's target roles/locations
+and the job-search goal's target companies (Step 7), then stores results
+through the same dedup-aware ingest path Step 2 uses for manually-added
+jobs. Deliberately excludes LinkedIn, Indeed, SimplyHired, and Wellfound
+-- see app/discovery/base.py for why.
 
 Each source is independent: one source erroring (bad API key, network
 failure, unexpected response) is recorded against that source only and
@@ -19,10 +20,13 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.discovery.adzuna import search_adzuna
+from app.discovery.arbeitnow import search_arbeitnow
 from app.discovery.base import ALL_SOURCES, COMPANY_SOURCES, DiscoveredJob, DiscoveryQuery, DiscoverySourceError
 from app.discovery.greenhouse import search_greenhouse
+from app.discovery.himalayas import search_himalayas
 from app.discovery.lever import search_lever
 from app.discovery.remoteok import search_remoteok
+from app.discovery.remotive import search_remotive
 from app.discovery.usajobs import search_usajobs
 from app.discovery.weworkremotely import search_weworkremotely
 from app.models.discovery_run import DiscoveryRun
@@ -90,6 +94,12 @@ def _run_source(source: str, query: DiscoveryQuery) -> list[DiscoveredJob]:
         return search_adzuna(query, settings.adzuna_app_id, settings.adzuna_app_key, settings.adzuna_country)
     if source == "usajobs":
         return search_usajobs(query, settings.usajobs_api_key, settings.usajobs_user_agent_email)
+    if source == "remotive":
+        return search_remotive(query)
+    if source == "arbeitnow":
+        return search_arbeitnow(query)
+    if source == "himalayas":
+        return search_himalayas(query)
 
     raise DiscoveryInputError(f"Unknown discovery source: {source}")
 

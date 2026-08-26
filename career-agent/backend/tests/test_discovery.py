@@ -9,10 +9,13 @@ import pytest
 import requests
 
 from app.discovery.adzuna import search_adzuna
+from app.discovery.arbeitnow import search_arbeitnow
 from app.discovery.base import DiscoveredJob, DiscoveryQuery, DiscoverySourceError
 from app.discovery.greenhouse import search_greenhouse
+from app.discovery.himalayas import search_himalayas
 from app.discovery.lever import search_lever
 from app.discovery.remoteok import search_remoteok
+from app.discovery.remotive import search_remotive
 from app.discovery.usajobs import search_usajobs
 from app.discovery.weworkremotely import search_weworkremotely
 from app.models.enums import DiscoveryTrigger, JobEmploymentType, WorkplaceType
@@ -230,6 +233,90 @@ def test_usajobs_parses_results(mocker):
     assert job.employment_type == JobEmploymentType.FULL_TIME
 
 
+# --- Remotive ------------------------------------------------------------
+
+
+def test_remotive_parses_results_and_passes_first_keyword_as_search(mocker):
+    get = mocker.patch("app.discovery.remotive.requests.get", return_value=_response(200, {
+        "jobs": [{
+            "id": 555, "title": "Machine Learning Engineer", "company_name": "RemoteCo",
+            "url": "https://remotive.com/remote-jobs/555", "job_type": "full_time",
+            "candidate_required_location": "Worldwide",
+            "description": "<p>" + "Great ML role. " * 20 + "</p>",
+            "publication_date": "2026-08-10T00:00:00",
+        }],
+    }))
+
+    results = search_remotive(DiscoveryQuery(keywords=["Machine Learning", "AI Engineer"], limit_per_source=10))
+    assert len(results) == 1
+    job = results[0]
+    assert job.external_job_id == "555"
+    assert job.employment_type == JobEmploymentType.FULL_TIME
+    assert job.workplace_type == WorkplaceType.REMOTE
+    assert job.posted_date == "2026-08-10"
+    assert get.call_args.kwargs["params"]["search"] == "Machine Learning"
+
+
+# --- Arbeitnow -------------------------------------------------------------
+
+
+def test_arbeitnow_filters_by_keyword_and_unescapes_description(mocker):
+    mocker.patch("app.discovery.arbeitnow.requests.get", return_value=_response(200, {
+        "data": [
+            {
+                "slug": "ml-engineer-acme", "title": "Machine Learning Engineer", "company_name": "Acme",
+                "url": "https://www.arbeitnow.com/jobs/companies/acme/ml-engineer-acme",
+                "tags": ["Machine Learning"], "remote": True, "location": "Worldwide",
+                "description": "&lt;p&gt;" + "Build ML systems. " * 20 + "&lt;/p&gt;",
+                "created_at": 1723276800,
+            },
+            {
+                "slug": "sales-rep-other", "title": "Sales Rep", "company_name": "OtherCo",
+                "url": "https://www.arbeitnow.com/jobs/companies/otherco/sales-rep-other",
+                "tags": [], "remote": False, "location": "NYC", "description": "", "created_at": 1723276800,
+            },
+        ],
+    }))
+
+    results = search_arbeitnow(DiscoveryQuery(keywords=["Machine Learning"], limit_per_source=10))
+    assert len(results) == 1
+    job = results[0]
+    assert job.external_job_id == "ml-engineer-acme"
+    assert job.workplace_type == WorkplaceType.REMOTE
+    assert job.posted_date == "2024-08-10"
+    assert "<p>" not in job.description and "&lt;" not in job.description
+    assert "Build ML systems." in job.description
+
+
+# --- Himalayas ---------------------------------------------------------
+
+
+def test_himalayas_parses_results(mocker):
+    get = mocker.patch("app.discovery.himalayas.requests.get", return_value=_response(200, {
+        "jobs": [{
+            "title": "Machine Learning Engineer", "companyName": "RemoteCo",
+            "guid": "https://himalayas.app/companies/remoteco/jobs/ml-engineer",
+            "applicationLink": "https://himalayas.app/companies/remoteco/jobs/ml-engineer",
+            "employmentType": "Full Time", "locationRestrictions": ["United States", "Canada"],
+            "minSalary": 100000, "maxSalary": 140000, "currency": "USD",
+            "description": "<p>" + "Great ML role. " * 20 + "</p>",
+            "pubDate": 1723276800,
+        }],
+    }))
+
+    results = search_himalayas(DiscoveryQuery(keywords=["Machine Learning"], locations=["United States"], limit_per_source=10))
+    assert len(results) == 1
+    job = results[0]
+    assert job.external_job_id == "https://himalayas.app/companies/remoteco/jobs/ml-engineer"
+    assert job.location == "United States, Canada"
+    assert job.employment_type == JobEmploymentType.FULL_TIME
+    assert job.workplace_type == WorkplaceType.REMOTE
+    assert job.salary_min == 100000
+    assert job.posted_date == "2024-08-10"
+    assert get.call_args.kwargs["params"]["q"] == "Machine Learning"
+    assert get.call_args.kwargs["params"]["country"] == "United States"
+
+
 # --- ingest_discovered_job (dedup) ----------------------------------------
 
 
@@ -346,7 +433,10 @@ def test_discovery_sources_endpoint(client):
 
     assert resp.status_code == 200
     sources = {s["source"]: s for s in resp.json()}
-    assert set(sources) == {"greenhouse", "lever", "remoteok", "weworkremotely", "adzuna", "usajobs"}
+    assert set(sources) == {
+        "greenhouse", "lever", "remoteok", "weworkremotely", "adzuna", "usajobs",
+        "remotive", "arbeitnow", "himalayas",
+    }
     assert sources["greenhouse"]["configured"] is True
     assert sources["adzuna"]["configured"] is False
 

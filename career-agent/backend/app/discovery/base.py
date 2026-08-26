@@ -1,12 +1,13 @@
 """Shared types for Step 8's job discovery adapters.
 
 Each adapter module (greenhouse.py, lever.py, remoteok.py,
-weworkremotely.py, adzuna.py, usajobs.py) talks to one public, ToS-
-compliant job source and returns a list of DiscoveredJob -- plain,
-already-structured data (title/company/location/etc known up front,
-unlike Step 2's manual paste/URL flow which needs AI extraction to learn
-those). Deliberately excludes LinkedIn and Indeed: both explicitly
-prohibit automated scraping in their ToS and run active anti-bot
+weworkremotely.py, adzuna.py, usajobs.py, remotive.py, arbeitnow.py,
+himalayas.py) talks to one public, ToS-compliant job source and returns a
+list of DiscoveredJob -- plain, already-structured data (title/company/
+location/etc known up front, unlike Step 2's manual paste/URL flow which
+needs AI extraction to learn those). Deliberately excludes LinkedIn,
+Indeed, SimplyHired, and Wellfound: all four explicitly prohibit
+automated scraping/data-mining in their ToS and run active anti-bot
 enforcement (LinkedIn has litigated and won against scrapers -- hiQ v.
 LinkedIn). Those stay a manual paste/URL flow through Step 2, same as
 before this step existed.
@@ -16,7 +17,10 @@ from dataclasses import dataclass, field
 
 from app.models.enums import JobEmploymentType, WorkplaceType
 
-ALL_SOURCES = ["greenhouse", "lever", "remoteok", "weworkremotely", "adzuna", "usajobs"]
+ALL_SOURCES = [
+    "greenhouse", "lever", "remoteok", "weworkremotely", "adzuna", "usajobs",
+    "remotive", "arbeitnow", "himalayas",
+]
 COMPANY_SOURCES = {"greenhouse", "lever"}
 
 
