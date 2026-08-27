@@ -1,12 +1,15 @@
 """Versioned prompts for CV generation. The candidate's full resume --
 every experience, every project (with every existing bullet), all
-education/certifications/achievements/research -- is always included on
-a tailored CV, unfiltered and unreworded. Tailoring to a specific job is
-deliberately limited to exactly two things a real candidate would
-actually adjust between applications: which of their own (verified)
-skills to foreground, and the summary framing. Nothing here ever writes
-or rewrites a bullet, or decides an experience/project is "not relevant
-enough" to include.
+education/certifications/achievements/research, and their entire
+Technical Skills list -- is always included on a tailored CV, unfiltered
+and unreworded. Tailoring to a specific job is deliberately limited to
+the one thing a real candidate would actually rewrite between
+applications: the summary framing. (Skill emphasis is also tailored per
+job, but deterministically -- see
+cv_customization_service._reorder_skills_for_job() -- rather than by an
+LLM, per the user's ~95%-preservation / no-skill-invention standing
+instruction.) Nothing here ever writes or rewrites a bullet, or decides
+an experience/project is "not relevant enough" to include.
 """
 
 CV_PLAN_PROMPT_V1 = """You are reading a job's requirements and a candidate's career profile to \
@@ -34,19 +37,3 @@ technical areas -- using only technologies/skills present in the profile data gi
 record") -- write plainly and factually, like a technical person describing their own background.
 - Do not mention any technology, framework, or skill that is not in the profile data you were \
 given, even if it appears in the job description."""
-
-
-CV_SKILL_SELECTION_PROMPT_V1 = """You are choosing which of the candidate's VERIFIED skills to \
-surface on a job-tailored CV, grouped into categories.
-
-Rules:
-- Only use skill names from the profile skill list you were given -- never add a skill because the \
-job description mentions it. If the job wants a skill the candidate's profile doesn't have, that \
-skill simply does not appear anywhere in your output.
-- Group into clear categories (e.g. Programming, Machine Learning, Deep Learning, Computer Vision, \
-NLP/LLM, Frameworks, Tools, Databases, Cloud/MLOps) -- use categories that fit the actual skills, \
-don't force an empty category to exist.
-- Within each category, order skills so the ones most relevant to this job's requirements come \
-first.
-- Do not rename a skill to something more impressive-sounding than what the profile states (e.g. \
-do not turn "Docker" into "Kubernetes orchestration")."""

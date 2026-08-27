@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from app.ai.cv_structured_outputs import CVContentOutput, CVPlanOutput, SkillCategoryOutput
+from app.ai.cv_structured_outputs import CVContentOutput, CVPlanOutput
 from app.models.cv_change import CVChange
 from app.models.enums import CVStatus
 from app.schemas.cv_generation import CVPlan
@@ -25,10 +25,7 @@ def _fake_client(*parsed_in_order):
 
 def _plan_and_content(rich_profile):
     plan_output = CVPlanOutput(target_role="Machine Learning Engineer", priority_skills=["PyTorch"], reasoning="Relevant.")
-    content_output = CVContentOutput(
-        summary="Machine Learning Engineer with experience in PyTorch.",
-        skill_categories=[SkillCategoryOutput(category="ML/DL", skills=["PyTorch"])],
-    )
+    content_output = CVContentOutput(summary="Machine Learning Engineer with experience in PyTorch.")
     return plan_output, content_output
 
 

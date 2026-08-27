@@ -13,7 +13,7 @@ instance. Step 5's browser automation is real Playwright against the
 local HTML fixture, never a real job site.
 """
 
-from app.ai.cv_structured_outputs import CVContentOutput, CVPlanOutput, SkillCategoryOutput
+from app.ai.cv_structured_outputs import CVContentOutput, CVPlanOutput
 from app.ai.structured_outputs import ApplicationAnswerOutput, CoverLetterOutput
 from app.models.enums import ApplicationStatus, JobStatus
 
@@ -61,10 +61,7 @@ def test_full_step_1_to_7_workflow(
         target_role="Machine Learning Engineer", priority_skills=["PyTorch"],
         reasoning="PyTorch experience is directly relevant.",
     )
-    content_output = CVContentOutput(
-        summary="Machine Learning Engineer with hands-on PyTorch experience.",
-        skill_categories=[SkillCategoryOutput(category="ML/DL", skills=["PyTorch"])],
-    )
+    content_output = CVContentOutput(summary="Machine Learning Engineer with hands-on PyTorch experience.")
     mocker.patch("app.services.cv_customization_service.get_ai_client", return_value=_fake_openai_client(plan_output, content_output))
     cv_resp = client.post(f"/jobs/{job.id}/cv/generate")
     assert cv_resp.status_code == 201, cv_resp.text

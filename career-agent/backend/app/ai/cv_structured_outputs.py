@@ -1,10 +1,13 @@
 """Pydantic models the CV-generation LLM calls must validate against.
 
 Note what's deliberately absent: there is no field anywhere here for the
-model to select which experiences/projects/bullets appear (the full
-profile always does, verbatim) or to write/rewrite any bullet's text.
-The only content an LLM ever authors on a tailored CV is the summary and
-the choice of which already-verified skills to surface.
+model to select which experiences/projects/bullets/skills appear (the
+full profile is always included, verbatim -- see
+cv_customization_service._master_skill_categories() for the Skills
+section specifically, which is a deterministic grouping of the
+candidate's own stored skills, only reordered by job relevance, never
+AI-selected). The only content an LLM ever authors on a tailored CV is
+the summary.
 """
 
 from pydantic import BaseModel, Field
@@ -16,11 +19,5 @@ class CVPlanOutput(BaseModel):
     reasoning: str = ""
 
 
-class SkillCategoryOutput(BaseModel):
-    category: str
-    skills: list[str] = Field(default_factory=list)
-
-
 class CVContentOutput(BaseModel):
     summary: str
-    skill_categories: list[SkillCategoryOutput] = Field(default_factory=list)

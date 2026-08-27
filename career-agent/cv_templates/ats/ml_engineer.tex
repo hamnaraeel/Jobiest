@@ -15,7 +15,7 @@
 \usepackage{lmodern}
 \renewcommand{\familydefault}{\sfdefault}
 
-\usepackage[left=0.75in,right=0.75in,top=0.6in,bottom=0.6in]{geometry}
+\usepackage[left=0.65in,right=0.65in,top=0.3in,bottom=0.3in]{geometry}
 \usepackage[hidelinks]{hyperref}
 \usepackage{array}
 
@@ -28,16 +28,20 @@
 
 \pagestyle{empty}
 \setlength{\parindent}{0pt}
-\setlength{\parskip}{2pt}
+\setlength{\parskip}{0.5pt}
 
+% \\* (not \\) between the heading text and its rule -- the star form
+% forbids a page break at that specific linebreak, so a heading can never
+% land at the bottom of one page with its underline orphaned onto the
+% next.
 \newcommand{\sectiontitle}[1]{%
-  \vspace{8pt}
-  \noindent{\large\bfseries #1}\\[-3pt]
-  \noindent\rule{\linewidth}{0.6pt}\\[3pt]
+  \vspace{3pt}
+  \noindent{\large\bfseries #1}\\*[-3pt]
+  \noindent\rule{\linewidth}{0.6pt}\\[1pt]
 }
 
 \newcommand{\subsectiontitle}[1]{%
-  \vspace{3pt}
+  \vspace{2pt}
   \noindent\textit{\textbf{#1}}\\[1pt]
 }
 
@@ -59,14 +63,14 @@
   \begin{itemize}
   \setlength{\itemsep}{1pt}
   \setlength{\parskip}{0pt}
-  \setlength{\topsep}{2pt}
+  \setlength{\topsep}{1pt}
 }{\end{itemize}}
 
 \newenvironment{tightlistzero}{%
   \begin{itemize}
   \setlength{\itemsep}{0pt}
   \setlength{\parskip}{0pt}
-  \setlength{\topsep}{2pt}
+  \setlength{\topsep}{1pt}
 }{\end{itemize}}
 
 \begin{document}

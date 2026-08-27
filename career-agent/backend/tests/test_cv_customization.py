@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.ai.client import AIConfigurationError
-from app.ai.cv_structured_outputs import CVContentOutput, CVPlanOutput, SkillCategoryOutput
+from app.ai.cv_structured_outputs import CVContentOutput, CVPlanOutput
 from app.models.enums import EntityType
 from app.schemas.cv_generation import CVPlan
 from app.services import cv_customization_service as svc
@@ -63,26 +63,48 @@ def test_generate_cv_plan_filters_unverified_priority_skills(client, rich_profil
     assert plan.priority_skills == ["PyTorch"]
 
 
-# --- 2: skill selection ------------------------------------------------------
+# --- 2: deterministic skill tailoring (never AI-selected) -------------------
+#
+# Per the user's standing "MASTER CV" instruction, the Skills section is
+# always the candidate's full, verified skill list grouped by each
+# skill's own stored category, and per-job tailoring only reorders it
+# toward the job's requirements -- it never adds, drops, or asks an LLM
+# to pick skills.
 
 
-def test_generate_cv_content_produces_skill_categories(client, rich_profile, db_session, make_analyzed_job):
+def test_master_skill_categories_includes_every_verified_skill(client, rich_profile, db_session):
+    ctx = get_relevant_career_data(db_session, rich_profile["profile"]["id"])
+    categories = svc._master_skill_categories(ctx)
+    assert categories == [{"category": "ML/DL", "skills": ["PyTorch"]}]
+
+
+def test_reorder_skills_for_job_never_adds_or_removes_skills(client, rich_profile, db_session, make_analyzed_job):
     job = make_analyzed_job(requirements=_basic_requirements())
     ctx = get_relevant_career_data(db_session, rich_profile["profile"]["id"])
     plan = CVPlan(target_role="Machine Learning Engineer", priority_skills=["PyTorch"], reasoning="x")
 
-    content_output = CVContentOutput(
-        summary="Machine Learning Engineer with experience in PyTorch.",
-        skill_categories=[SkillCategoryOutput(category="ML/DL", skills=["PyTorch"])],
-    )
-    fake_client = _fake_client(content_output)
+    master = svc._master_skill_categories(ctx)
+    reordered = svc._reorder_skills_for_job(master, job, plan)
 
-    output, sanitized, issues = svc.generate_cv_content(fake_client, "gpt-4o-mini", job, plan, ctx)
-    assert issues == []
-    assert sanitized["skills"] == [{"category": "ML/DL", "skills": ["PyTorch"]}]
+    master_skills = {s for cat in master for s in cat["skills"]}
+    reordered_skills = {s for cat in reordered for s in cat["skills"]}
+    assert reordered_skills == master_skills
 
 
 # --- 3: summary generation --------------------------------------------------
+
+
+def test_generate_cv_content_produces_summary(client, rich_profile, db_session, make_analyzed_job):
+    job = make_analyzed_job(requirements=_basic_requirements())
+    ctx = get_relevant_career_data(db_session, rich_profile["profile"]["id"])
+    plan = CVPlan(target_role="Machine Learning Engineer", priority_skills=["PyTorch"], reasoning="x")
+
+    content_output = CVContentOutput(summary="Machine Learning Engineer with experience in PyTorch.")
+    fake_client = _fake_client(content_output)
+
+    output, issues = svc.generate_cv_content(fake_client, "gpt-4o-mini", job, plan, ctx)
+    assert issues == []
+    assert output.summary == "Machine Learning Engineer with experience in PyTorch."
 
 
 def test_summary_with_unsupported_technology_falls_back(client, rich_profile, db_session, make_analyzed_job):
@@ -92,11 +114,11 @@ def test_summary_with_unsupported_technology_falls_back(client, rich_profile, db
     ctx = get_relevant_career_data(db_session, rich_profile["profile"]["id"])
     plan = CVPlan(target_role="Machine Learning Engineer", priority_skills=[], reasoning="x")
 
-    bad_summary = CVContentOutput(summary="Machine Learning Engineer experienced in AWS cloud deployment.", skill_categories=[])
+    bad_summary = CVContentOutput(summary="Machine Learning Engineer experienced in AWS cloud deployment.")
     # First call (bad) + retry call (still bad) -- validator should catch both times
     fake_client = _fake_client(bad_summary, bad_summary)
 
-    output, sanitized, issues = svc.generate_cv_content(fake_client, "gpt-4o-mini", job, plan, ctx)
+    output, issues = svc.generate_cv_content(fake_client, "gpt-4o-mini", job, plan, ctx)
     assert any(i.code == "UNSUPPORTED_TECHNOLOGY_IN_SUMMARY" for i in issues)
 
 
@@ -110,13 +132,15 @@ def test_assemble_cv_content_includes_full_profile_verbatim(client, rich_profile
     original_text = rich_profile["experience"]["bullets"][0]["bullet"]
 
     plan = CVPlan(target_role="Machine Learning Engineer", priority_skills=["PyTorch"], reasoning="x")
-    content_output = CVContentOutput(summary="Machine Learning Engineer with PyTorch experience.", skill_categories=[])
-    sanitized = {"skills": []}
+    content_output = CVContentOutput(summary="Machine Learning Engineer with PyTorch experience.")
+    skill_categories = svc._reorder_skills_for_job(svc._master_skill_categories(ctx), job, plan)
 
-    content = svc.assemble_cv_content(job, plan, content_output, sanitized, ctx)
+    content = svc.assemble_cv_content(job, plan, content_output, skill_categories, ctx)
 
     assert len(content.experience) == len(ctx.experiences)
     assert len(content.projects) == len(ctx.projects)
+    # The Skills section is always the candidate's full verified skill list.
+    assert content.skills[0].skills == ["PyTorch"]
     bullet = content.experience[0].bullets[0]
     assert bullet.source_type == EntityType.EXPERIENCE_BULLET
     assert bullet.source_id == bullet_id
@@ -130,10 +154,7 @@ def test_assemble_cv_content_includes_full_profile_verbatim(client, rich_profile
 
 def _plan_and_content_for(rich_profile):
     plan_output = CVPlanOutput(target_role="Machine Learning Engineer", priority_skills=["PyTorch"], reasoning="Directly relevant.")
-    content_output = CVContentOutput(
-        summary="Machine Learning Engineer with experience in PyTorch and computer vision.",
-        skill_categories=[SkillCategoryOutput(category="ML/DL", skills=["PyTorch"])],
-    )
+    content_output = CVContentOutput(summary="Machine Learning Engineer with experience in PyTorch and computer vision.")
     return plan_output, content_output
 
 
@@ -154,6 +175,7 @@ def test_generate_cv_creates_version_with_scores_and_traceability(client, rich_p
     assert cv.version_name.endswith("V1")
     assert cv.match_score_before is not None
     assert cv.match_score_after is not None
+    assert cv.skills == [{"category": "ML/DL", "skills": ["PyTorch"]}]
     assert cv.experience[0]["bullets"][0]["source_type"] == "experience_bullet"
     assert cv.experience[0]["bullets"][0]["verified"] is True
 

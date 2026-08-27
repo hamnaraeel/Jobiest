@@ -29,6 +29,17 @@ _ESCAPE_CHARS = {
     "}": r"\}",
     "~": r"\textasciitilde{}",
     "^": r"\textasciicircum{}",
+    # Invisible/exotic Unicode spacing characters that AI-generated text
+    # occasionally contains (e.g. a narrow no-break space before a "%")
+    # -- plain pdflatex's default font encoding has no glyph for these
+    # and fatally errors ("Unicode character ... not set up for use with
+    # LaTeX"). Collapsing them to a plain space changes no visible
+    # content, only makes the exact same text renderable.
+    " ": " ",
+    " ": " ",
+    " ": " ",
+    " ": " ",
+    "​": "",
 }
 
 
@@ -104,7 +115,22 @@ def render_experience_section(experience) -> str:
         right = _date_range(e.start_date, e.end_date, e.currently_working)
         header = f"\\tworow{{{left}}}{{{right}}}"
         blocks.append(header + "\n" + _bullets_to_latex(e.bullets))
-    return "\\sectiontitle{Experience}\n" + "\n\\vspace{4pt}\n".join(blocks) + "\n"
+    return "\\sectiontitle{Experience}\n" + "\n\\vspace{1pt}\n".join(blocks) + "\n"
+
+
+def _clean_project_url(url: str | None) -> str | None:
+    """Only ever renders a real link. Resume import occasionally stores
+    parsed-anchor placeholder text (e.g. the literal word "GitHub", not a
+    URL) in this field -- rendering that as \\href would produce a link
+    that goes nowhere, which is worse than omitting it."""
+    if not url:
+        return None
+    url = url.strip()
+    if url.lower().startswith(("http://", "https://")):
+        return url
+    if "." in url and " " not in url:
+        return f"https://{url}"
+    return None
 
 
 def render_projects_section(projects) -> str:
@@ -122,17 +148,19 @@ def render_projects_section(projects) -> str:
 
     def _project_block(p) -> str:
         tech = f" \\textit{{({escape_latex(', '.join(p.technologies))})}}" if p.technologies else ""
-        header = f"\\noindent\\textbf{{{escape_latex(p.name)}}}{tech}\\\\"
+        link = _clean_project_url(getattr(p, "github_url", None))
+        link_part = f" \\href{{{link}}}{{GitHub}}" if link else ""
+        header = f"\\noindent\\textbf{{{escape_latex(p.name)}}}{tech}{link_part}\\\\"
         return header + "\n" + _bullets_to_latex(p.bullets)
 
     if len(categories) <= 1:
         blocks = [_project_block(p) for p in projects]
-        return "\\sectiontitle{Projects}\n" + "\n\\vspace{4pt}\n".join(blocks) + "\n"
+        return "\\sectiontitle{Projects}\n" + "\n\\vspace{1pt}\n".join(blocks) + "\n"
 
     parts = ["\\sectiontitle{Projects}"]
     for category, items in categories.items():
         parts.append(f"\\subsectiontitle{{{escape_latex(category)}}}")
-        parts.append("\n\\vspace{4pt}\n".join(_project_block(p) for p in items))
+        parts.append("\n\\vspace{1pt}\n".join(_project_block(p) for p in items))
     return "\n".join(parts) + "\n"
 
 
@@ -145,7 +173,7 @@ def render_research_section(research) -> str:
         header = f"\\noindent\\textbf{{{escape_latex(r.title)}}}{tech}\\\\"
         body = f"{escape_latex(r.description)}\\\\" if r.description else ""
         blocks.append(header + ("\n" + body if body else ""))
-    return "\\sectiontitle{Research}\n" + "\n\\vspace{4pt}\n".join(blocks) + "\n"
+    return "\\sectiontitle{Research}\n" + "\n\\vspace{1pt}\n".join(blocks) + "\n"
 
 
 def render_education_section(education) -> str:

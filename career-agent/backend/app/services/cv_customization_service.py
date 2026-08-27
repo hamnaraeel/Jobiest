@@ -9,27 +9,33 @@ LLM said about itself.
 
 Tailoring a CV to a specific job is deliberately narrow: the candidate's
 full profile -- every experience, every project, every existing bullet,
-all education/certifications/achievements/research -- is always included,
-verbatim, in assemble_cv_content(). Nothing here ever omits an entry as
-"not relevant enough" or rewrites a bullet's wording. The only things an
-LLM ever authors are (1) which of the candidate's own verified skills to
-surface and (2) the summary -- both per generate_cv_content()."""
+all education/certifications/achievements/research, and their entire
+Technical Skills list -- is always included, verbatim, in
+assemble_cv_content(). Nothing here ever omits an entry as "not relevant
+enough" or rewrites a bullet's wording. Per the user's standing ~95%-
+preservation instruction, the only thing an LLM ever authors is the
+summary (generate_cv_content()); skill emphasis is tailored per job too,
+but deterministically by reordering the candidate's own stored skill
+categories toward the job's requirements -- never by an LLM selecting,
+adding, or dropping skills (see _master_skill_categories() and
+_reorder_skills_for_job())."""
 
 import json
 import logging
+import re
 
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai.client import STRUCTURED_OUTPUT_MAX_TOKENS, get_ai_client, get_ai_extra_params, get_ai_model
-from app.ai.cv_prompts import CV_PLAN_PROMPT_V1, CV_SKILL_SELECTION_PROMPT_V1, CV_SUMMARY_PROMPT_V1
+from app.ai.cv_prompts import CV_PLAN_PROMPT_V1, CV_SUMMARY_PROMPT_V1
 from app.ai.cv_structured_outputs import CVContentOutput, CVPlanOutput
 from app.config import get_settings
 from app.models.cv_change import CVChange
 from app.models.cv_section import CVSection
 from app.models.cv_version import CVVersion
-from app.models.enums import CVSectionType, CVStatus, EntityType
+from app.models.enums import CVSectionType, CVStatus, EntityType, SkillCategory
 from app.models.job import Job
 from app.models.job_match import JobMatch
 from app.schemas.cv import (
@@ -46,8 +52,14 @@ from app.schemas.cv import (
 )
 from app.schemas.cv_generation import CVPlan, ValidationIssue
 from app.services import cv_comparison_service, cv_render_service
-from app.services.cv_validation_service import validate_skill_categories, validate_summary
-from app.services.job_matching_service import ProfileContext, compute_match, get_relevant_career_data, lookup_skill
+from app.services.cv_validation_service import validate_summary
+from app.services.job_matching_service import (
+    ProfileContext,
+    compute_match,
+    get_relevant_career_data,
+    lookup_skill,
+    normalize_skill,
+)
 from app.services.profile_service import get_default_profile
 
 logger = logging.getLogger("app.cv_customization")
@@ -142,8 +154,9 @@ def generate_cv_plan(client, model: str, job: Job, ctx: ProfileContext) -> CVPla
 
 def _compact_profile_for_content(ctx: ProfileContext, plan: CVPlan) -> dict:
     """Unlike the planning payload, no ids are needed here -- there is no
-    selection step left to reference them. Skill selection and the
-    summary are the only things this call produces."""
+    selection step left to reference them. The summary is the only thing
+    this call produces (skills are handled deterministically, never by
+    the LLM -- see _master_skill_categories())."""
     return {
         "priority_skills": plan.priority_skills,
         "verified_skills": sorted(name for name, ev in ctx.skill_index.items() if ev.verified),
@@ -158,27 +171,20 @@ def _compact_profile_for_content(ctx: ProfileContext, plan: CVPlan) -> dict:
     }
 
 
-def _validate_content(content: CVContentOutput, ctx: ProfileContext, job: Job, plan: CVPlan) -> tuple[list[ValidationIssue], dict]:
-    issues: list[ValidationIssue] = []
+def _validate_content(content: CVContentOutput, ctx: ProfileContext, job: Job, plan: CVPlan) -> list[ValidationIssue]:
     watch_terms = [r.skill_name or r.requirement_text for r in job.requirements] + plan.priority_skills
-
-    skill_issues, sanitized_skills = validate_skill_categories(content, ctx)
-    issues += skill_issues
-
-    issues += validate_summary(content.summary, ctx, watch_terms)
-
-    return issues, {"skills": sanitized_skills}
+    return validate_summary(content.summary, ctx, watch_terms)
 
 
-def generate_cv_content(client, model: str, job: Job, plan: CVPlan, ctx: ProfileContext) -> tuple[CVContentOutput, dict, list[ValidationIssue]]:
-    system_prompt = CV_SUMMARY_PROMPT_V1 + "\n\n---\n\n" + CV_SKILL_SELECTION_PROMPT_V1
+def generate_cv_content(client, model: str, job: Job, plan: CVPlan, ctx: ProfileContext) -> tuple[CVContentOutput, list[ValidationIssue]]:
+    system_prompt = CV_SUMMARY_PROMPT_V1
     payload = json.dumps({
         "job": {"title": job.title, "company": job.company, "target_role": plan.target_role},
         "profile": _compact_profile_for_content(ctx, plan),
     })
 
     output = _call_structured(client, model, system_prompt, payload, CVContentOutput)
-    issues, sanitized = _validate_content(output, ctx, job, plan)
+    issues = _validate_content(output, ctx, job, plan)
 
     if issues:
         correction = (
@@ -187,9 +193,61 @@ def generate_cv_content(client, model: str, job: Job, plan: CVPlan, ctx: Profile
             ". Regenerate using only the given profile data."
         )
         output = _call_structured(client, model, system_prompt, payload + "\n\nCORRECTION:\n" + correction, CVContentOutput)
-        issues, sanitized = _validate_content(output, ctx, job, plan)
+        issues = _validate_content(output, ctx, job, plan)
 
-    return output, sanitized, issues
+    return output, issues
+
+
+# --- Deterministic skill tailoring -----------------------------------------
+#
+# Per the user's standing "MASTER CV" instruction: the Technical Skills
+# section is never regenerated or reselected by an LLM. It is always the
+# candidate's full, verified skill list, grouped by each skill's own
+# stored category (set once at resume-import time) -- that grouping *is*
+# the master Skills section and every skill in it always appears on every
+# generated CV. The only thing that varies per job is ordering: skills
+# and categories that match this job's requirements are promoted toward
+# the top (a stable sort, so nothing else about the order changes). No
+# skill is ever added, removed, or renamed.
+
+
+def _master_skill_categories(ctx: ProfileContext) -> list[dict]:
+    # `Skill.verified` is a separate manual evidence-confirmation flag
+    # (see VerifiableMixin) that resume import always leaves False --
+    # it does not mean "not really in the candidate's resume." Every
+    # other section of the CV (experience, projects, education, ...)
+    # already includes the full profile regardless of that flag; Skills
+    # follows the same rule for consistency, since it's still the
+    # candidate's own master data.
+    by_category: dict[SkillCategory, list[str]] = {}
+    for skill in ctx.profile.skills:
+        by_category.setdefault(skill.category, []).append(skill.name)
+    return [{"category": cat.value, "skills": by_category[cat]} for cat in SkillCategory if cat in by_category]
+
+
+def _reorder_skills_for_job(master_categories: list[dict], job: Job, plan: CVPlan) -> list[dict]:
+    # Job requirements are often full sentences ("Strong familiarity with
+    # PyTorch"), not bare skill names, so relevance is substring
+    # containment (same convention as cv_validation_service.matching_terms)
+    # rather than an exact-match set -- otherwise a short skill name like
+    # "PyTorch" would never match a longer requirement sentence.
+    watch_terms = [r.skill_name or r.requirement_text for r in job.requirements] + plan.priority_skills
+    haystack = f" {' '.join(normalize_skill(t) for t in watch_terms if t)} "
+
+    def is_relevant(skill_name: str) -> bool:
+        term = normalize_skill(skill_name)
+        return bool(term) and f" {term} " in haystack
+
+    categories = [
+        {
+            "category": cat["category"],
+            "skills": sorted(cat["skills"], key=lambda s: not is_relevant(s)),
+            "has_relevant": any(is_relevant(s) for s in cat["skills"]),
+        }
+        for cat in master_categories
+    ]
+    categories.sort(key=lambda c: not c["has_relevant"])
+    return [{"category": c["category"], "skills": c["skills"]} for c in categories]
 
 
 # Deterministic (not AI-decided): a project's own already-recorded skill
@@ -204,6 +262,30 @@ def _project_category(proj) -> str:
     if tags & _RESEARCH_ML_SKILL_TAGS:
         return "Research & ML"
     return "Engineering & Full-Stack"
+
+
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def _project_bullets(proj) -> list[CVBullet]:
+    """One bullet per sentence of the project's own stored description --
+    a mechanical split on sentence boundaries, never a rewrite, so the
+    candidate's exact wording always survives verbatim on the CV. Falls
+    back to the project's quantified results only when there's no
+    description recorded at all (some projects only have those)."""
+    if proj.description:
+        sentences = [s.strip() for s in _SENTENCE_SPLIT_RE.split(proj.description.strip()) if s.strip()]
+        return [
+            CVBullet(text=s, source_type=EntityType.PROJECT, source_id=proj.id, verified=proj.verified)
+            for s in sentences
+        ]
+    return [
+        CVBullet(
+            text=f"{r.description} {r.metric or ''}".strip(),
+            source_type=EntityType.PROJECT_RESULT, source_id=r.id, verified=r.verified,
+        )
+        for r in proj.results
+    ]
 
 
 def _cv_header(ctx: ProfileContext) -> CVHeader:
@@ -224,13 +306,15 @@ def _cv_header(ctx: ProfileContext) -> CVHeader:
     )
 
 
-def assemble_cv_content(job: Job, plan: CVPlan, content: CVContentOutput, sanitized: dict, ctx: ProfileContext) -> CVContent:
+def assemble_cv_content(
+    job: Job, plan: CVPlan, content: CVContentOutput, skill_categories: list[dict], ctx: ProfileContext
+) -> CVContent:
     """The candidate's full profile, always -- every experience (with
     every bullet), every project (with every result), all research/
-    education/certifications/achievements, verbatim. Tailoring to `job`
-    touches only `content.summary` and the skill selection in
-    `sanitized["skills"]`; nothing here ever omits or reorders a
-    profile entry based on the job."""
+    education/certifications/achievements, and every verified skill,
+    verbatim. Tailoring to `job` touches only `content.summary` and the
+    ordering of `skill_categories` (see _reorder_skills_for_job); nothing
+    here ever omits a profile entry or a skill based on the job."""
 
     experience_entries = [
         CVExperienceEntry(
@@ -248,13 +332,7 @@ def assemble_cv_content(job: Job, plan: CVPlan, content: CVContentOutput, saniti
         CVProjectEntry(
             project_id=proj.id, name=proj.name, category=_project_category(proj),
             technologies=proj.technologies, github_url=proj.github_url,
-            bullets=[
-                CVBullet(
-                    text=f"{r.description} {r.metric or ''}".strip(),
-                    source_type=EntityType.PROJECT_RESULT, source_id=r.id, verified=r.verified,
-                )
-                for r in proj.results
-            ],
+            bullets=_project_bullets(proj),
         )
         for proj in ctx.projects
     ]
@@ -288,7 +366,7 @@ def assemble_cv_content(job: Job, plan: CVPlan, content: CVContentOutput, saniti
     return CVContent(
         header=_cv_header(ctx),
         summary=content.summary,
-        skills=[CVSkillCategory(category=c["category"], skills=c["skills"]) for c in sanitized["skills"]],
+        skills=[CVSkillCategory(category=c["category"], skills=c["skills"]) for c in skill_categories],
         experience=experience_entries,
         projects=project_entries,
         research=research_entries,
@@ -335,13 +413,15 @@ def generate_cv(db: Session, job: Job, template_name: str = "ats/ml_engineer", c
     ctx = get_relevant_career_data(db, profile.id)
 
     plan = generate_cv_plan(client, model, job, ctx)
-    output, sanitized, issues = generate_cv_content(client, model, job, plan, ctx)
+    output, issues = generate_cv_content(client, model, job, plan, ctx)
 
     summary_has_unsupported_claim = any(i.code == "UNSUPPORTED_TECHNOLOGY_IN_SUMMARY" for i in issues)
     final_summary = _fallback_summary(plan, ctx) if summary_has_unsupported_claim else output.summary
-    sanitized["summary"] = final_summary
 
-    content = assemble_cv_content(job, plan, output.model_copy(update={"summary": final_summary}), sanitized, ctx)
+    skill_categories = _reorder_skills_for_job(_master_skill_categories(ctx), job, plan)
+    sanitized = {"summary": final_summary, "skills": skill_categories}
+
+    content = assemble_cv_content(job, plan, output.model_copy(update={"summary": final_summary}), skill_categories, ctx)
 
     version_number = db.execute(
         select(func.count(CVVersion.id)).where(CVVersion.job_id == job.id)
