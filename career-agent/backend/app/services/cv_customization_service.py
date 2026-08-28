@@ -331,7 +331,7 @@ def assemble_cv_content(
     project_entries = [
         CVProjectEntry(
             project_id=proj.id, name=proj.name, category=_project_category(proj),
-            technologies=proj.technologies, github_url=proj.github_url,
+            technologies=proj.technologies, github_url=proj.github_url, demo_url=proj.demo_url,
             bullets=_project_bullets(proj),
         )
         for proj in ctx.projects

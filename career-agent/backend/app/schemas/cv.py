@@ -49,6 +49,7 @@ class CVProjectEntry(BaseModel):
     category: str
     technologies: list[str] = Field(default_factory=list)
     github_url: str | None = None
+    demo_url: str | None = None
     bullets: list[CVBullet] = Field(default_factory=list)
 
 

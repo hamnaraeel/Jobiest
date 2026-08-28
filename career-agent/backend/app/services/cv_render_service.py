@@ -101,7 +101,7 @@ def render_skills_section(skills) -> str:
         lines.append(f"\\noindent\\textbf{{{escape_latex(cat.category)}:}} {names}\\\\")
     if not lines:
         return ""
-    return "\\sectiontitle{Skills}\n" + "\n".join(lines) + "\n"
+    return "\\sectiontitle{Technical Skills}\n" + "\n".join(lines) + "\n"
 
 
 def render_experience_section(experience) -> str:
@@ -109,18 +109,17 @@ def render_experience_section(experience) -> str:
         return ""
     blocks = []
     for e in experience:
-        left = f"\\entrytitle{{{escape_latex(e.role)}}}, {escape_latex(e.company)}"
-        if e.location:
-            left += f" -- {escape_latex(e.location)}"
-        right = _date_range(e.start_date, e.end_date, e.currently_working)
-        header = f"\\tworow{{{left}}}{{{right}}}"
-        blocks.append(header + "\n" + _bullets_to_latex(e.bullets))
-    # ~8pt between one entry's last bullet and the next entry's title --
-    # distinct from the ~3pt title-to-first-bullet gap set in \tworow and
-    # the ~1pt between bullets set in \tightlist, per the spec's spacing
-    # hierarchy (8-12pt between entries; using the tight end throughout
-    # to keep page utilization dense).
-    return "\\sectiontitle{Experience}\n" + "\n\\vspace{8pt}\n".join(blocks) + "\n"
+        # Two-line header, matching the master resume: company (bold) with
+        # its location right-aligned on the first line, then role
+        # (italic) with the date range right-aligned on the second --
+        # not the single "Role, Company -- Location [date]" line used in
+        # earlier drafts of this template.
+        row1 = f"\\tworow{{\\textbf{{{escape_latex(e.company)}}}}}{{{escape_latex(e.location) if e.location else ''}}}"
+        date_range = _date_range(e.start_date, e.end_date, e.currently_working)
+        row2 = f"\\tworow{{\\textit{{{escape_latex(e.role)}}}}}{{{date_range}}}"
+        header = row1 + "\\rowbreak\n" + row2 + "\\rowbreak\n"
+        blocks.append(header + _bullets_to_latex(e.bullets))
+    return "\\sectiontitle{Work Experience}\n" + "\n\\vspace{8pt}\n".join(blocks) + "\n"
 
 
 def _clean_project_url(url: str | None) -> str | None:
@@ -138,35 +137,61 @@ def _clean_project_url(url: str | None) -> str | None:
     return None
 
 
+def _short_link_label(url: str) -> str:
+    """"https://linkedin.com/in/hamnaraeel" -> "linkedin/hamnaraeel" --
+    matches the master resume's shortened link display text. The full
+    URL is always still what \\href actually points to; this only
+    changes what's printed."""
+    u = url.strip()
+    for prefix in ("https://", "http://"):
+        if u.startswith(prefix):
+            u = u[len(prefix):]
+            break
+    if u.startswith("www."):
+        u = u[4:]
+    u = u.rstrip("/")
+    parts = u.split("/")
+    domain = parts[0].split(".")[0]
+    handle = parts[-1] if len(parts) > 1 else ""
+    return f"{domain}/{handle}" if handle else domain
+
+
+def _project_links(p) -> str:
+    parts = []
+    github = _clean_project_url(getattr(p, "github_url", None))
+    if github:
+        parts.append(f"\\href{{{github}}}{{GitHub}}")
+    demo = _clean_project_url(getattr(p, "demo_url", None))
+    if demo:
+        parts.append(f"\\href{{{demo}}}{{Live Demo}}")
+    return " | ".join(parts)
+
+
 def render_projects_section(projects) -> str:
     if not projects:
         return ""
-    # Grouped under a category subheading (e.g. "Research & ML" vs
-    # "Engineering & Full-Stack") when more than one category is present
-    # -- each project's category was assigned deterministically from its
-    # own recorded skill tags, not by the job being applied to (see
-    # cv_customization_service._project_category), so grouping is stable
-    # across every generation.
+    # Each project category (e.g. "Research & ML", "Engineering &
+    # Full-Stack") is its own full section heading, "<category>
+    # Projects" -- matching the master resume, which treats project
+    # categories as top-level sections rather than subheadings nested
+    # under one "Projects" section. A project's category was assigned
+    # deterministically from its own recorded skill tags, not by the job
+    # being applied to (see cv_customization_service._project_category),
+    # so grouping is stable across every generation.
     categories: dict[str, list] = {}
     for p in projects:
         categories.setdefault(p.category, []).append(p)
 
     def _project_block(p) -> str:
-        tech = f" \\textit{{({escape_latex(', '.join(p.technologies))})}}" if p.technologies else ""
-        link = _clean_project_url(getattr(p, "github_url", None))
-        link_part = f" \\href{{{link}}}{{GitHub}}" if link else ""
-        header = f"\\noindent\\entrytitle{{{escape_latex(p.name)}}}{tech}{link_part}\\\\[3pt]\\nopagebreak[3]"
-        return header + "\n" + _bullets_to_latex(p.bullets)
+        # Title (bold) with GitHub/Live Demo links right-aligned, same
+        # \tworow row style as Experience/Education headers, then bullets.
+        header = f"\\tworow{{\\textbf{{{escape_latex(p.name)}}}}}{{{_project_links(p)}}}\\rowbreak\n"
+        return header + _bullets_to_latex(p.bullets)
 
-    # ~8pt between one project's last bullet and the next project's
-    # title -- same 8-12pt inter-entry target as Experience.
-    if len(categories) <= 1:
-        blocks = [_project_block(p) for p in projects]
-        return "\\sectiontitle{Projects}\n" + "\n\\vspace{8pt}\n".join(blocks) + "\n"
-
-    parts = ["\\sectiontitle{Projects}"]
+    # ~8pt between one project's last bullet and the next project's title.
+    parts = []
     for category, items in categories.items():
-        parts.append(f"\\subsectiontitle{{{escape_latex(category)}}}")
+        parts.append(f"\\sectiontitle{{{escape_latex(category)} Projects}}")
         parts.append("\n\\vspace{8pt}\n".join(_project_block(p) for p in items))
     return "\n".join(parts) + "\n"
 
@@ -177,7 +202,7 @@ def render_research_section(research) -> str:
     blocks = []
     for r in research:
         tech = f" \\textit{{({escape_latex(', '.join(r.technologies))})}}" if r.technologies else ""
-        header = f"\\noindent\\entrytitle{{{escape_latex(r.title)}}}{tech}\\\\[3pt]\\nopagebreak[3]"
+        header = f"\\noindent\\textbf{{{escape_latex(r.title)}}}{tech}\\\\[3pt]\\nopagebreak[3]"
         body = f"{escape_latex(r.description)}\\\\" if r.description else ""
         blocks.append(header + ("\n" + body if body else ""))
     return "\\sectiontitle{Research}\n" + "\n\\vspace{8pt}\n".join(blocks) + "\n"
@@ -188,10 +213,16 @@ def render_education_section(education) -> str:
         return ""
     blocks = []
     for e in education:
+        # Two-line header matching Experience/Projects: institution
+        # (bold) with its location -- Education has no stored location
+        # field, so that side is intentionally left blank rather than
+        # showing something unreal -- then degree/field (italic) with
+        # the date range right-aligned.
+        row1 = f"\\tworow{{\\textbf{{{escape_latex(e.institution)}}}}}{{}}"
         field = f", {escape_latex(e.field)}" if e.field else ""
-        left = f"\\entrytitle{{{escape_latex(e.degree)}{field}}}, {escape_latex(e.institution)}"
-        right = _date_range(e.start_date, e.end_date)
-        blocks.append(f"\\tworow{{{left}}}{{{right}}}")
+        date_range = _date_range(e.start_date, e.end_date)
+        row2 = f"\\tworow{{\\textit{{{escape_latex(e.degree)}{field}}}}}{{{date_range}}}"
+        blocks.append(row1 + "\\rowbreak\n" + row2)
     # 3-5pt between education entries when there's more than one.
     return "\\sectiontitle{Education}\n" + "\n\\vspace{3pt}\n".join(blocks) + "\n"
 
@@ -200,7 +231,7 @@ def render_certifications_section(certifications) -> str:
     if not certifications:
         return ""
     items = "\n".join(
-        f"  \\item {escape_latex(c.name)}, \\textbf{{{escape_latex(c.issuer)}}}" for c in certifications
+        f"  \\item {escape_latex(c.name)} -- \\textbf{{{escape_latex(c.issuer)}}}" for c in certifications
     )
     return f"\\sectiontitle{{Certifications \\& Trainings}}\n\\begin{{tightlistzero}}\n{items}\n\\end{{tightlistzero}}\n"
 
@@ -238,18 +269,27 @@ def render_cv_to_latex(content: CVContent, template_name: str = "ats/ml_engineer
 
     # Two contact lines, not one: location/phone (how to reach the
     # candidate directly) on the first, email/LinkedIn/GitHub/portfolio
-    # (online presence) on the second.
+    # (online presence) on the second. Links use their short display
+    # form ("linkedin/handle") like the master resume, while still
+    # pointing \href at the real, full stored URL.
     line1_parts = [p for p in [content.header.location, content.header.phone] if p]
-    line2_parts = [p for p in [content.header.email, content.header.linkedin, content.header.github, content.header.portfolio] if p]
     contact_line_1 = " \\quad|\\quad ".join(escape_latex(p) for p in line1_parts)
-    contact_line_2 = " \\quad|\\quad ".join(escape_latex(p) for p in line2_parts)
+
+    line2_items = []
+    if content.header.email:
+        line2_items.append(escape_latex(content.header.email))
+    for url in (content.header.linkedin, content.header.github, content.header.portfolio):
+        if url:
+            line2_items.append(f"\\href{{{url}}}{{{escape_latex(_short_link_label(url))}}}")
+    contact_line_2 = " \\quad|\\quad ".join(line2_items)
 
     # Built line-by-line and joined with \\ rather than templated with a
     # fixed number of \\[Npt] separators -- a blank line (e.g. no tagline)
     # followed by \\ is a LaTeX error ("There's no line here to end"),
     # not just a cosmetic gap, so an empty line must be skipped entirely
-    # rather than rendered blank.
-    header_lines = [f"{{\\LARGE\\bfseries {escape_latex(content.header.name)}}}"]
+    # rather than rendered blank. Name at 24pt, matching the master
+    # resume's much larger header than a typical compact ATS template.
+    header_lines = [f"{{\\fontsize{{24}}{{28}}\\selectfont\\bfseries {escape_latex(content.header.name)}}}"]
     if content.header.tagline:
         header_lines.append(escape_latex(content.header.tagline))
     if contact_line_1:

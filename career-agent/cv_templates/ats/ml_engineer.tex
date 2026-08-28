@@ -1,26 +1,15 @@
 \documentclass[10pt]{article}
 
-% TEMPORARY: this machine's TeX install is missing the `helvetic` font-
-% metrics package that \usepackage[scaled]{helvet} (true Arial-equivalent
-% Helvetica/Nimbus Sans) needs -- installing it requires
-% `sudo tlmgr install helvetic`, which needs an interactive password
-% Claude can't supply. Using Latin Modern Sans instead for now: a real,
-% already-installed scalable sans-serif font, so generation isn't blocked
-% waiting on that install. Swap the two lines below for the ones in the
-% comment once `helvetic` is installed -- everything else in this
-% template (no \scshape, glyphtounicode, tabular* rows) is unaffected
-% either way.
-% \usepackage[scaled=0.92]{helvet}
+% Serif (Latin Modern Roman -- the default LaTeX article body font) to
+% match the candidate's own master resume, which was itself set in a
+% plain serif LaTeX template. No \familydefault override to sans here,
+% unlike earlier drafts of this template -- this one intentionally
+% mirrors the master document's actual look, not a generic ATS-Arial
+% convention.
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
-\renewcommand{\familydefault}{\sfdefault}
 
-% 0.55in on all sides -- the tight end of the 0.55-0.65in target range,
-% chosen (along with the low end of every spacing range below) to keep
-% page utilization dense per the "avoid excessive white space" rule
-% rather than the loose end of every range at once, which stacks up into
-% a nearly-empty trailing page.
-\usepackage[left=0.55in,right=0.55in,top=0.55in,bottom=0.55in]{geometry}
+\usepackage[left=0.75in,right=0.75in,top=0.6in,bottom=0.6in]{geometry}
 \usepackage[hidelinks]{hyperref}
 \usepackage{array}
 
@@ -33,31 +22,24 @@
 
 \pagestyle{empty}
 \setlength{\parindent}{0pt}
-\setlength{\parskip}{1pt}
+\setlength{\parskip}{2pt}
 
-% Job/project entry titles (role, company, project name) render at
-% 10.5pt bold -- one notch above the 10pt body text, distinct from both
-% body text and the larger section headings below.
-\newcommand{\entrytitle}[1]{{\fontsize{10.5}{12.6}\selectfont\bfseries #1}}
-
-% Section heading: 13pt bold, with its own rule. \\* (not \\) between the
-% heading text and the rule forbids a page break at that specific
-% linebreak, so a heading can never land at the bottom of one page with
-% its rule orphaned onto the next. The rule ends with \par (a genuine
-% paragraph break, in vertical mode) rather than another \\ -- whatever
-% follows (a plain skill-category line, a summary paragraph, a project's
-% title line) is then a fresh paragraph that starts its own \noindent cleanly,
-% instead of being a manually-broken continuation of the heading's own
-% paragraph, which is what was producing a stray first-line indent
-% before non-list content. \nopagebreak sits right after that \par, its
-% correct usage point, to discourage (not guarantee -- plain pdflatex
-% has no stronger primitive) breaking right after the heading. 4pt
-% before the heading, 4pt after the rule before the first entry -- the
-% tight end of the spec's 4-7pt target.
+% Section heading: bold, one notch above body size, with a full-width
+% rule immediately beneath it and almost no gap -- the master resume's
+% own compact heading style, not a large/spaced-out ATS-template one.
+% The rule ends with \par (a genuine paragraph break, in vertical mode)
+% so whatever plain-text content follows (a summary paragraph, a skill
+% line) starts a fresh paragraph and picks up \noindent correctly,
+% instead of being read as a manual-linebreak continuation of the
+% heading's own paragraph. \\* between the heading text and the rule
+% forbids a page break at that specific point, so the two can never be
+% split across pages; \nopagebreak right after the \par discourages
+% (LaTeX has no hard guarantee without extra packages) breaking between
+% the heading and its first line of content.
 \newcommand{\sectiontitle}[1]{%
-  \par\vspace{4pt}
-  \noindent{\fontsize{13}{15}\selectfont\bfseries #1}\\*[-3pt]
-  \noindent\rule{\linewidth}{0.6pt}\par\nopagebreak[3]\vspace{4pt}%
+  \vspace{8pt}
+  \noindent{\fontsize{12}{14}\selectfont\bfseries #1}\\*[1pt]
+  \noindent\rule{\linewidth}{0.5pt}\par\nopagebreak[3]\vspace{4pt}%
 }
 
 \newcommand{\subsectiontitle}[1]{%
@@ -65,36 +47,30 @@
   \noindent\textit{\textbf{#1}}\par\vspace{3pt}%
 }
 
-% Single-column layout throughout -- this is the one ATS-safe use of a
-% two-column construct, for aligning a title/company on the left against
-% a date range on the right without manual \hfill spacing (which some
-% parsers mis-order). A tabular* row carries noticeably more built-in
-% vertical padding than a normal text line, so the linebreak after it
-% pulls back with a negative space to net out to ~3pt before the next
-% line -- the tight end of the spec's 3-5pt title-to-first-bullet target
-% (distinct from the ~1pt between bullets, and the ~8pt between one
-% entry and the next, both set where entries are joined in
-% cv_render_service.py). \nopagebreak softly discourages splitting the
-% title from its first bullet across a page.
+% A single two-column row (left-aligned label, right-aligned value) --
+% used both for a single title/date line and, stacked twice with
+% \rowbreak between them, for the master resume's two-line entry header
+% (company/location, then role/date). No trailing spacing is built in
+% here; callers compose the gaps explicitly with \rowbreak so the same
+% macro works whether one or two rows precede the bullets.
 \newcommand{\tworow}[2]{%
   \noindent\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}l r@{}}
     #1 & #2
-  \end{tabular*}\\[-3pt]\nopagebreak[3]%
+  \end{tabular*}%
 }
 
+% A tabular* row carries noticeably more built-in vertical padding than
+% a normal text line, so this pulls back with a negative space to net
+% out to ~3pt before whatever comes next (another \tworow, or the first
+% bullet) -- consistent everywhere a \tworow is used.
+\newcommand{\rowbreak}{\\[-3pt]\nopagebreak[3]}
+
 % Tight bullet lists using only plain-LaTeX list primitives (no enumitem
-% dependency, which this TeX installation doesn't have and can't self-
-% install) -- \tightlist for normal bullets, \tightlistzero for
-% zero-itemsep lists like Certifications. leftmargin/labelsep/labelwidth
-% are set explicitly so the bullet glyph sits ~0.22in from the margin
-% and bullet text starts ~0.42in -- the same indentation everywhere a
-% bullet appears (job history, projects, achievements, certifications),
-% rather than whatever \itemize's default happens to compute.
+% dependency, which this TeX installation doesn't have and can't
+% self-install) -- \tightlist for normal bullets, \tightlistzero for
+% zero-itemsep lists like Certifications.
 \newenvironment{tightlist}{%
   \begin{itemize}
-  \setlength{\leftmargin}{0.42in}
-  \setlength{\labelsep}{0.08in}
-  \setlength{\labelwidth}{0.12in}
   \setlength{\itemsep}{1pt}
   \setlength{\parskip}{0pt}
   \setlength{\topsep}{1pt}
@@ -102,9 +78,6 @@
 
 \newenvironment{tightlistzero}{%
   \begin{itemize}
-  \setlength{\leftmargin}{0.42in}
-  \setlength{\labelsep}{0.08in}
-  \setlength{\labelwidth}{0.12in}
   \setlength{\itemsep}{1pt}
   \setlength{\parskip}{0pt}
   \setlength{\topsep}{1pt}
