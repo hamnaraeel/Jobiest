@@ -109,13 +109,18 @@ def render_experience_section(experience) -> str:
         return ""
     blocks = []
     for e in experience:
-        left = f"\\textbf{{{escape_latex(e.role)}}}, {escape_latex(e.company)}"
+        left = f"\\entrytitle{{{escape_latex(e.role)}}}, {escape_latex(e.company)}"
         if e.location:
             left += f" -- {escape_latex(e.location)}"
         right = _date_range(e.start_date, e.end_date, e.currently_working)
         header = f"\\tworow{{{left}}}{{{right}}}"
         blocks.append(header + "\n" + _bullets_to_latex(e.bullets))
-    return "\\sectiontitle{Experience}\n" + "\n\\vspace{1pt}\n".join(blocks) + "\n"
+    # ~8pt between one entry's last bullet and the next entry's title --
+    # distinct from the ~3pt title-to-first-bullet gap set in \tworow and
+    # the ~1pt between bullets set in \tightlist, per the spec's spacing
+    # hierarchy (8-12pt between entries; using the tight end throughout
+    # to keep page utilization dense).
+    return "\\sectiontitle{Experience}\n" + "\n\\vspace{8pt}\n".join(blocks) + "\n"
 
 
 def _clean_project_url(url: str | None) -> str | None:
@@ -150,17 +155,19 @@ def render_projects_section(projects) -> str:
         tech = f" \\textit{{({escape_latex(', '.join(p.technologies))})}}" if p.technologies else ""
         link = _clean_project_url(getattr(p, "github_url", None))
         link_part = f" \\href{{{link}}}{{GitHub}}" if link else ""
-        header = f"\\noindent\\textbf{{{escape_latex(p.name)}}}{tech}{link_part}\\\\"
+        header = f"\\noindent\\entrytitle{{{escape_latex(p.name)}}}{tech}{link_part}\\\\[3pt]\\nopagebreak[3]"
         return header + "\n" + _bullets_to_latex(p.bullets)
 
+    # ~8pt between one project's last bullet and the next project's
+    # title -- same 8-12pt inter-entry target as Experience.
     if len(categories) <= 1:
         blocks = [_project_block(p) for p in projects]
-        return "\\sectiontitle{Projects}\n" + "\n\\vspace{1pt}\n".join(blocks) + "\n"
+        return "\\sectiontitle{Projects}\n" + "\n\\vspace{8pt}\n".join(blocks) + "\n"
 
     parts = ["\\sectiontitle{Projects}"]
     for category, items in categories.items():
         parts.append(f"\\subsectiontitle{{{escape_latex(category)}}}")
-        parts.append("\n\\vspace{1pt}\n".join(_project_block(p) for p in items))
+        parts.append("\n\\vspace{8pt}\n".join(_project_block(p) for p in items))
     return "\n".join(parts) + "\n"
 
 
@@ -170,10 +177,10 @@ def render_research_section(research) -> str:
     blocks = []
     for r in research:
         tech = f" \\textit{{({escape_latex(', '.join(r.technologies))})}}" if r.technologies else ""
-        header = f"\\noindent\\textbf{{{escape_latex(r.title)}}}{tech}\\\\"
+        header = f"\\noindent\\entrytitle{{{escape_latex(r.title)}}}{tech}\\\\[3pt]\\nopagebreak[3]"
         body = f"{escape_latex(r.description)}\\\\" if r.description else ""
         blocks.append(header + ("\n" + body if body else ""))
-    return "\\sectiontitle{Research}\n" + "\n\\vspace{1pt}\n".join(blocks) + "\n"
+    return "\\sectiontitle{Research}\n" + "\n\\vspace{8pt}\n".join(blocks) + "\n"
 
 
 def render_education_section(education) -> str:
@@ -182,10 +189,11 @@ def render_education_section(education) -> str:
     blocks = []
     for e in education:
         field = f", {escape_latex(e.field)}" if e.field else ""
-        left = f"\\textbf{{{escape_latex(e.degree)}{field}}}, {escape_latex(e.institution)}"
+        left = f"\\entrytitle{{{escape_latex(e.degree)}{field}}}, {escape_latex(e.institution)}"
         right = _date_range(e.start_date, e.end_date)
         blocks.append(f"\\tworow{{{left}}}{{{right}}}")
-    return "\\sectiontitle{Education}\n" + "\n".join(blocks) + "\n"
+    # 3-5pt between education entries when there's more than one.
+    return "\\sectiontitle{Education}\n" + "\n\\vspace{3pt}\n".join(blocks) + "\n"
 
 
 def render_certifications_section(certifications) -> str:
