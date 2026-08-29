@@ -98,7 +98,12 @@ export default function ApplicationMaterialsPanel({ jobId, existingApplicationId
         <div>
           <div className="mb-2 flex items-center justify-between">
             <h4 className="text-xs font-semibold uppercase text-slate-400">Tailored CV</h4>
-            {materials.cv && <Badge color={materialBadgeColor(materials.cv.status)}>{materials.cv.status}</Badge>}
+            {materials.cv && (
+              <div className="flex items-center gap-2">
+                {cv && <span className="text-xs text-slate-500">v{cv.version_number}</span>}
+                <Badge color={materialBadgeColor(materials.cv.status)}>{materials.cv.status}</Badge>
+              </div>
+            )}
           </div>
           {!materials.cv && (
             <Button variant="primary" disabled={busy !== null} onClick={handleGenerateCv}>
@@ -151,7 +156,12 @@ export default function ApplicationMaterialsPanel({ jobId, existingApplicationId
         <div>
           <div className="mb-2 flex items-center justify-between">
             <h4 className="text-xs font-semibold uppercase text-slate-400">Cover letter</h4>
-            {materials.cover_letter && <Badge color={materialBadgeColor(materials.cover_letter.status)}>{materials.cover_letter.status}</Badge>}
+            {materials.cover_letter && (
+              <div className="flex items-center gap-2">
+                {coverLetter && <span className="text-xs text-slate-500">v{coverLetter.version_number}</span>}
+                <Badge color={materialBadgeColor(materials.cover_letter.status)}>{materials.cover_letter.status}</Badge>
+              </div>
+            )}
           </div>
           {!materials.cover_letter && cvApproved && (
             <Button variant="primary" disabled={busy !== null} onClick={() => run('cl.generate', () => generateCoverLetter(jobId))}>
