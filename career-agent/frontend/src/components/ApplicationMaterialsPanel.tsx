@@ -33,6 +33,7 @@ export default function ApplicationMaterialsPanel({ jobId, existingApplicationId
   const [coverLetter, setCoverLetter] = useState<CoverLetterRead | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [actionError, setActionError] = useState<unknown>(null)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     if (materials?.cv) getCv(materials.cv.id).then(setCv).catch(() => setCv(null))
@@ -67,6 +68,13 @@ export default function ApplicationMaterialsPanel({ jobId, existingApplicationId
     if (!materials?.match) await matchJob(jobId)
     return generateCv(jobId)
   })
+
+  const handleCopyCoverLetter = async () => {
+    if (!coverLetter) return
+    await navigator.clipboard.writeText(coverLetter.content)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
   const handleApply = async () => {
     setBusy('apply')
@@ -117,6 +125,8 @@ export default function ApplicationMaterialsPanel({ jobId, existingApplicationId
                 {cv.skills.reduce((n, c) => n + c.skills.length, 0)} skills · {cv.experience.length} experience entries ·{' '}
                 {cv.projects.length} projects
                 {cv.match_score_after !== null ? ` · match ${cv.match_score_after}%` : ''}
+                {' · generated '}
+                {new Date(cv.created_at).toLocaleString()}
               </p>
               {cv.warnings.length > 0 && (
                 <ul className="mb-2 flex flex-col gap-1">
@@ -174,7 +184,9 @@ export default function ApplicationMaterialsPanel({ jobId, existingApplicationId
           {coverLetter && (
             <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
               <p className="mb-2 whitespace-pre-line text-sm leading-relaxed text-slate-300">{coverLetter.content}</p>
-              <p className="mb-2 text-xs text-slate-500">{coverLetter.word_count} words</p>
+              <p className="mb-2 text-xs text-slate-500">
+                {coverLetter.word_count} words · generated {new Date(coverLetter.created_at).toLocaleString()}
+              </p>
               {coverLetter.warnings.length > 0 && (
                 <ul className="mb-2 flex flex-col gap-1">
                   {coverLetter.warnings.map((w, i) => (
@@ -191,6 +203,9 @@ export default function ApplicationMaterialsPanel({ jobId, existingApplicationId
                     {busy === 'cl.approve' ? 'Approving…' : 'Approve'}
                   </Button>
                 )}
+                <Button variant="secondary" onClick={handleCopyCoverLetter}>
+                  {copied ? 'Copied!' : 'Copy text'}
+                </Button>
                 <Button
                   variant="ghost"
                   disabled={busy !== null}
