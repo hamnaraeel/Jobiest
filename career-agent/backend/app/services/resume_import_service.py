@@ -43,6 +43,7 @@ from app.models.project import Project, ProjectResult
 from app.models.research import Research
 from app.models.resume_import import ResumeImport
 from app.models.skill import Skill
+from app.services.validation_service import clean_url
 
 logger = logging.getLogger("app.resume_import")
 
@@ -288,7 +289,12 @@ def confirm_import(db: Session, resume_import: ResumeImport, profile_id: int | N
             continue
         project = Project(
             profile_id=profile.id, name=p.name, description=p.description,
-            technologies=p.technologies, skills=p.skills, github_url=p.github_url, demo_url=p.demo_url, verified=False,
+            technologies=p.technologies, skills=p.skills,
+            # Sanitized, not stored raw: a resume's link is usually a
+            # hyperlink whose visible text is a word, and this is the
+            # only project write path that doesn't go through an
+            # HttpUrl-typed schema field (see clean_url).
+            github_url=clean_url(p.github_url), demo_url=clean_url(p.demo_url), verified=False,
         )
         db.add(project)
         db.flush()

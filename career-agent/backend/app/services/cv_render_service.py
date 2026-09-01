@@ -13,6 +13,7 @@ from pathlib import Path
 
 from app.config import get_settings
 from app.schemas.cv import CVContent
+from app.services.validation_service import clean_url
 
 logger = logging.getLogger("app.cv_render")
 
@@ -122,21 +123,6 @@ def render_experience_section(experience) -> str:
     return "\\sectiontitle{Work Experience}\n" + "\n\\vspace{8pt}\n".join(blocks) + "\n"
 
 
-def _clean_project_url(url: str | None) -> str | None:
-    """Only ever renders a real link. Resume import occasionally stores
-    parsed-anchor placeholder text (e.g. the literal word "GitHub", not a
-    URL) in this field -- rendering that as \\href would produce a link
-    that goes nowhere, which is worse than omitting it."""
-    if not url:
-        return None
-    url = url.strip()
-    if url.lower().startswith(("http://", "https://")):
-        return url
-    if "." in url and " " not in url:
-        return f"https://{url}"
-    return None
-
-
 def _short_link_label(url: str) -> str:
     """"https://linkedin.com/in/hamnaraeel" -> "linkedin/hamnaraeel" --
     matches the master resume's shortened link display text. The full
@@ -158,10 +144,10 @@ def _short_link_label(url: str) -> str:
 
 def _project_links(p) -> str:
     parts = []
-    github = _clean_project_url(getattr(p, "github_url", None))
+    github = clean_url(getattr(p, "github_url", None))
     if github:
         parts.append(f"\\href{{{github}}}{{GitHub}}")
-    demo = _clean_project_url(getattr(p, "demo_url", None))
+    demo = clean_url(getattr(p, "demo_url", None))
     if demo:
         parts.append(f"\\href{{{demo}}}{{Live Demo}}")
     return " | ".join(parts)

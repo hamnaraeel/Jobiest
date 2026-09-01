@@ -36,6 +36,31 @@ class SkillStatus(str, Enum):
     MISSING = "missing"
 
 
+def clean_url(url: str | None) -> str | None:
+    """Returns a real URL, or None. Resume import is the one write path
+    that does not go through a Pydantic `HttpUrl` field -- it stores what
+    the parsing LLM read off the resume, and a resume's link is usually a
+    hyperlink whose visible text is a word ("GitHub", "Live Demo") rather
+    than its href. Storing that word is not a cosmetic problem: every
+    `*Read` schema types these columns as `HttpUrl`, so one placeholder
+    makes the whole list endpoint fail to serialize.
+
+    A bare host ("github.com/user/repo") is a real link missing only its
+    scheme, so it gets one. Anything with a space, or with no dot at all,
+    is prose and becomes None -- a missing link renders as nothing, which
+    is strictly better than a link that goes nowhere.
+    """
+
+    if not url:
+        return None
+    url = url.strip()
+    if url.lower().startswith(("http://", "https://")):
+        return url
+    if "." in url and " " not in url:
+        return f"https://{url}"
+    return None
+
+
 def orm_kwargs(payload: BaseModel, exclude: set[str] = frozenset(), url_fields: tuple[str, ...] = ()) -> dict:
     """model_dump() in "python" mode leaves Pydantic HttpUrl objects intact,
     which SQLAlchemy's String columns can't bind directly; "json" mode fixes
