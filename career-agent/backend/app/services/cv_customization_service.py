@@ -58,7 +58,12 @@ from app.schemas.cv import (
 )
 from app.schemas.cv_generation import CVPlan, ValidationIssue
 from app.services import cv_comparison_service, cv_render_service
-from app.services.cv_validation_service import validate_bullet_rewrite, validate_summary
+from app.services.cv_validation_service import (
+    is_same_text,
+    normalize_typography,
+    validate_bullet_rewrite,
+    validate_summary,
+)
 from app.services.job_matching_service import (
     ProfileContext,
     compute_match,
@@ -290,9 +295,16 @@ def rewrite_bullets_for_job(
 
     applied: list[tuple[str, str, CVSectionType]] = []
     rejected = 0
+    unchanged = 0
     for slot_id, original, section, bullet in slots:
-        rewritten = (proposed.get(slot_id) or "").strip()
-        if not rewritten or rewritten == original:
+        # Folded before comparing *and* before storing: models routinely
+        # echo a bullet back with ASCII hyphens swapped for U+2011 and
+        # quotes curled. That is not a reword -- and left unfolded it
+        # would both record a meaningless change and put characters an
+        # ATS keyword matcher does not expect into the CV.
+        rewritten = normalize_typography((proposed.get(slot_id) or "").strip())
+        if not rewritten or is_same_text(rewritten, original):
+            unchanged += 1
             continue
         issues = validate_bullet_rewrite(original, rewritten, vocabulary)
         if issues:
@@ -306,8 +318,8 @@ def rewrite_bullets_for_job(
         applied.append((original, rewritten, section))
 
     logger.info(
-        "bullet rewrite job_id=%s bullets=%d applied=%d rejected=%d",
-        job.id, len(slots), len(applied), rejected,
+        "bullet rewrite job_id=%s bullets=%d applied=%d rejected=%d unchanged=%d",
+        job.id, len(slots), len(applied), rejected, unchanged,
     )
     return content, applied
 

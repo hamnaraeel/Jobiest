@@ -60,6 +60,39 @@ def validate_summary(summary: str, ctx: ProfileContext, watch_terms: list[str]) 
     return issues
 
 
+# Typographic look-alikes an LLM substitutes without being asked. These
+# are not rewrites -- "real-time" and "real\u2011time" are the same words --
+# but they make the strings unequal, so without folding them a model that
+# merely echoes its input registers as having reworded every bullet. Worse
+# for the actual goal: U+2011 and friends are not what an ATS keyword
+# matcher expects to see.
+_TYPOGRAPHIC_FOLD = {
+    "\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2013": "-", "\u2014": "-", "\u2015": "-",
+    "\u2018": "'", "\u2019": "'", "\u201a": "'", "\u201b": "'",
+    "\u201c": '"', "\u201d": '"', "\u201e": '"', "\u201f": '"',
+    "\u00a0": " ", "\u2007": " ", "\u202f": " ", "\u2009": " ", "\u200a": " ",
+    "\u200b": "", "\u200c": "", "\u200d": "", "\ufeff": "",
+}
+
+
+def normalize_typography(text: str) -> str:
+    """Folds fancy punctuation back to ASCII and collapses whitespace runs.
+    Applied to accepted rewrites before they are stored, so a CV's text
+    stays in the plain characters an ATS parser expects."""
+
+    folded = "".join(_TYPOGRAPHIC_FOLD.get(ch, ch) for ch in text)
+    return " ".join(folded.split())
+
+
+def is_same_text(a: str, b: str) -> bool:
+    """Whether two bullet texts say the same thing. Differences in
+    typographic punctuation, whitespace, or a trailing period are not a
+    reword -- treating them as one would record a meaningless "reworded"
+    change and replace the candidate's own characters with worse ones."""
+
+    return normalize_typography(a).rstrip(".").strip() == normalize_typography(b).rstrip(".").strip()
+
+
 # Word-count headroom a rewrite gets over its original. A faithful
 # reword of the same fact lands close to the original length; a rewrite
 # that has grown by half is padding, and padding is where unsupported
