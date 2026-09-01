@@ -12,7 +12,13 @@ import pytest
 
 from app.agent import tool_router
 from app.ai.client import AIConfigurationError
-from app.ai.resume_parse_outputs import ParsedExperience, ParsedExperienceBullet, ParsedSkill, ResumeParseOutput
+from app.ai.resume_parse_outputs import (
+    ParsedExperience,
+    ParsedExperienceBullet,
+    ParsedProject,
+    ParsedSkill,
+    ResumeParseOutput,
+)
 from app.models.enums import ResumeImportStatus
 from app.models.resume_import import ResumeImport
 from app.services import resume_import_service as svc
@@ -230,3 +236,42 @@ async def test_agent_confirm_resume_import_tool_writes_unverified_rows(db_sessio
     from app.models.skill import Skill
     skill = db_session.query(Skill).one()
     assert skill.verified is False
+
+
+# --- project link sanitizing ------------------------------------------------
+#
+# Resume import is the only project write path that does not go through an
+# HttpUrl-typed schema field, and a resume's link is usually a hyperlink
+# whose visible text is a word rather than its href. Storing that word made
+# GET /projects fail to serialize *every* project, so this is guarded at the
+# write and at the endpoint.
+
+
+def test_import_drops_anchor_text_masquerading_as_a_project_link(db_session, mocker):
+    parsed = _sample_parsed(projects=[
+        ParsedProject(name="Segmentation Study", github_url="GitHub", demo_url="Live Demo"),
+        ParsedProject(name="CloudETL", github_url="github.com/jordan/cloudetl"),
+    ])
+    mocker.patch("app.services.resume_import_service.get_ai_client", return_value=_fake_openai_client(parsed))
+    resume_import = svc.parse_resume(db_session, "resume.txt", b"A career summary. " * 20)
+
+    profile = svc.confirm_import(db_session, resume_import)
+    by_name = {p.name: p for p in profile.projects}
+
+    # Prose is not a link -- dropping it beats rendering one that goes nowhere.
+    assert by_name["Segmentation Study"].github_url is None
+    assert by_name["Segmentation Study"].demo_url is None
+    # A real link missing only its scheme is still a real link.
+    assert by_name["CloudETL"].github_url == "https://github.com/jordan/cloudetl"
+
+
+def test_projects_endpoint_serializes_a_project_with_no_links(client, profile):
+    """The regression itself: ProjectRead types these columns as HttpUrl, so
+    a single unparseable value used to 500 the whole list endpoint."""
+
+    created = client.post("/projects", json={"profile_id": profile["id"], "name": "No Links"})
+    assert created.status_code == 201, created.text
+
+    listed = client.get("/projects")
+    assert listed.status_code == 200, listed.text
+    assert any(p["name"] == "No Links" for p in listed.json())
