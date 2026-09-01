@@ -1,4 +1,9 @@
-from app.services.cv_validation_service import validate_bullet_rewrite, validate_summary
+from app.services.cv_validation_service import (
+    is_same_text,
+    normalize_typography,
+    validate_bullet_rewrite,
+    validate_summary,
+)
 from app.services.job_matching_service import get_relevant_career_data, normalize_skill
 
 
@@ -66,3 +71,32 @@ def test_rewrite_may_not_be_padded_out():
 def test_empty_rewrite_is_rejected():
     codes = [i.code for i in validate_bullet_rewrite(_ORIGINAL, "   ", _VOCABULARY)]
     assert codes == ["EMPTY_BULLET_REWRITE"]
+
+
+# --- typographic no-op rewrites ---------------------------------------------
+#
+# Observed in a real generation: the model returned all 35 bullets with
+# ASCII hyphens swapped for U+2011 and nothing else reworded, which a
+# plain `!=` read as 12 genuine rewrites.
+
+
+def test_unicode_hyphen_swap_is_not_a_rewrite():
+    assert is_same_text("Implemented real-time monitoring", "Implemented real\u2011time monitoring")
+
+
+def test_curly_quote_swap_is_not_a_rewrite():
+    assert is_same_text('Built "Infinite Writing"', "Built \u201cInfinite Writing\u201d")
+
+
+def test_trailing_period_alone_is_not_a_rewrite():
+    assert is_same_text("Achieved 80.34% mean accuracy", "Achieved 80.34% mean accuracy.")
+
+
+def test_a_real_reword_is_still_a_rewrite():
+    assert not is_same_text("Worked on real-time monitoring", "Built real-time monitoring")
+
+
+def test_normalize_typography_returns_ascii_punctuation():
+    out = normalize_typography("first\u2011order MAML \u2014 \u201cXNLI\u201d\u00a0dataset")
+    assert out == 'first-order MAML - "XNLI" dataset'
+    assert "\u2011" not in out and "\u201c" not in out

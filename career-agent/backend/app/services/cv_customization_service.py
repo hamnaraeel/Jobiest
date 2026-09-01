@@ -84,6 +84,13 @@ DEFAULT_SECTION_ORDER = [
 ]
 
 
+# How many bullets go into one rewrite call. Small enough that the model
+# actually does the rewriting rather than echoing the list back (see
+# rewrite_bullets_for_job), large enough that a full CV is a handful of
+# calls rather than one per bullet.
+BULLET_REWRITE_BATCH_SIZE = 6
+
+
 class CVGenerationInputError(ValueError):
     pass
 
@@ -270,27 +277,41 @@ def rewrite_bullets_for_job(
     if not slots:
         return content, []
 
-    payload = json.dumps({
-        "job": {
-            "title": job.title,
-            "company": job.company,
-            "target_role": plan.target_role,
-            "requirements": _compact_requirements(job),
-        },
-        "bullets": [{"id": slot_id, "text": text} for slot_id, text, _, _ in slots],
-    })
+    job_context = {
+        "title": job.title,
+        "company": job.company,
+        "target_role": plan.target_role,
+        "requirements": _compact_requirements(job),
+    }
 
-    try:
-        output: CVBulletRewriteOutput = _call_structured(
-            client, model, CV_BULLET_REWRITE_PROMPT_V1, payload, CVBulletRewriteOutput
-        )
-    except AIResponseError as exc:
-        logger.warning("bullet rewrite unavailable for job_id=%s, keeping original bullets: %s", job.id, exc)
-        return content, []
-
-    # Ids the model invented are dropped by construction: this is keyed by
-    # the ids we minted, and anything else never gets looked up.
-    proposed = {r.id: r.text for r in output.bullets}
+    # Asked to reword a whole CV's worth of bullets in one response, the
+    # model stops rewording and starts echoing: a real generation handed
+    # over all 35 bullets got 35 back with nothing changed but ASCII
+    # hyphens swapped for U+2011. The same model, same prompt, given a
+    # handful at a time, rewrites properly. So the work is batched -- and
+    # batching also contains the damage, since one unusable response now
+    # costs a few bullets their tailoring instead of all of them.
+    proposed: dict[str, str] = {}
+    for start in range(0, len(slots), BULLET_REWRITE_BATCH_SIZE):
+        batch = slots[start:start + BULLET_REWRITE_BATCH_SIZE]
+        payload = json.dumps({
+            "job": job_context,
+            "bullets": [{"id": slot_id, "text": text} for slot_id, text, _, _ in batch],
+        })
+        try:
+            output: CVBulletRewriteOutput = _call_structured(
+                client, model, CV_BULLET_REWRITE_PROMPT_V1, payload, CVBulletRewriteOutput
+            )
+        except AIResponseError as exc:
+            logger.warning(
+                "bullet rewrite batch failed job_id=%s bullets %d-%d, keeping originals: %s",
+                job.id, start, start + len(batch) - 1, exc,
+            )
+            continue
+        # Ids the model invented are dropped by construction: this is
+        # keyed by the ids we minted, and anything else never gets
+        # looked up.
+        proposed.update({r.id: r.text for r in output.bullets})
     vocabulary = _rewrite_vocabulary(ctx, job)
 
     applied: list[tuple[str, str, CVSectionType]] = []

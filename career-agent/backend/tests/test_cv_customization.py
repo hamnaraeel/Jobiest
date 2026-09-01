@@ -251,6 +251,36 @@ def test_rewrite_bullets_survives_an_unavailable_model(client, rich_profile, db_
     assert applied == []
 
 
+def test_rewrite_bullets_batches_and_survives_one_bad_batch(client, rich_profile, db_session, make_analyzed_job, monkeypatch):
+    """Bullets are rewritten a few at a time, and a batch the model fails
+    on costs only its own bullets their tailoring -- the rest still get
+    rewritten."""
+
+    monkeypatch.setattr(svc, "BULLET_REWRITE_BATCH_SIZE", 1)
+    job = make_analyzed_job(requirements=_basic_requirements())
+    content, plan, ctx = _assembled_content(db_session, rich_profile, job)
+    slots = svc._bullet_slots(content)
+    assert len(slots) >= 2, "fixture must have an experience bullet and a project bullet"
+
+    reworded = "Built deep learning models for medical image segmentation in PyTorch"
+    ok_completion = MagicMock()
+    ok_completion.choices = [MagicMock()]
+    ok_completion.choices[0].message.parsed = CVBulletRewriteOutput(
+        bullets=[RewrittenBullet(id="e0b0", text=reworded)]
+    )
+    failing = MagicMock()
+    # First batch answers, every later batch raises.
+    failing.chat.completions.parse.side_effect = [ok_completion] + [RuntimeError("upstream is down")] * 20
+
+    content, applied = svc.rewrite_bullets_for_job(failing, "gpt-4o-mini", job, plan, content, ctx)
+
+    assert failing.chat.completions.parse.call_count > 1, "one call per bullet was expected at batch size 1"
+    assert content.experience[0].bullets[0].text == reworded
+    assert [(o, r) for o, r, _ in applied] == [(_ORIGINAL_BULLET, reworded)]
+    # The failed batches kept their stored text rather than losing content.
+    assert content.projects[0].bullets[0].text
+
+
 def test_generate_cv_records_applied_rewrites_in_the_audit_trail(client, rich_profile, db_session, make_analyzed_job):
     from app.models.cv_change import CVChange
     from app.models.enums import CVChangeType, CVSectionType
