@@ -4,83 +4,108 @@
 
 ```
 JOB  +  JOB MATCH (Step 2)  +  CAREER PROFILE (Step 1, read-only)
-  -> select relevant evidence (get_relevant_career_data, reused from Step 2)
-  -> CV PLAN                                    [1 LLM call]
-  -> CV CONTENT (summary/skills/bullet rewrites) [1 LLM call, retried once
+  -> read the full profile (get_relevant_career_data, reused from Step 2)
+  -> CV PLAN (framing only)                     [1 LLM call]
+  -> SUMMARY                                    [1 LLM call, retried once
                                                    if malformed or unsupported]
-  -> deterministic validation -> sanitize unsupported claims
-  -> assemble CVContent (education/certs/research/achievements copied
-     verbatim from the profile -- never LLM-touched)
+  -> deterministic skill reordering (no LLM)
+  -> assemble CVContent from the profile, verbatim
+  -> BULLET REWRITE, per bullet, validated      [1 LLM call]
   -> render LaTeX (Python builds it; the LLM never sees or writes LaTeX)
   -> compile PDF (pdflatex)
   -> store CVVersion (+ CVSection ordering, + CVChange audit trail)
 ```
 
-Two LLM calls total, same as Step 2's "extract, then explain" pattern: one
-to decide **what** to include (`CV_PLAN_PROMPT_V1`), one to decide **how
-to word it** (`CV_SUMMARY_PROMPT_V1` + `CV_BULLET_REWRITE_PROMPT_V1` +
-`CV_SKILL_SELECTION_PROMPT_V1`, concatenated into a single system
-message for that one call). `CV_PROJECT_SELECTION_PROMPT_V1`'s guidance is
-folded into the planning call, since selecting *which* projects matter is
-a planning decision, not a wording decision.
+Three LLM calls total: one to decide how to **frame** the candidate
+(`CV_PLAN_PROMPT_V1`), one to write the **summary**
+(`CV_SUMMARY_PROMPT_V1`), and one to **reword the candidate's existing
+bullets** toward the job description (`CV_BULLET_REWRITE_PROMPT_V1`).
+
+## What tailoring does and does not change
+
+Three different rules apply to three kinds of content, and the difference
+is the whole design:
+
+- **Inclusion is never AI-decided.** Every experience, project, bullet,
+  research item, education entry, certification, achievement, and skill on
+  the profile appears on every generated CV. There is no prompt, and no
+  schema field, for "which of these is relevant enough" -- see
+  `assemble_cv_content()` and `_master_skill_categories()`. A CV is never
+  shorter because a model judged something unimportant.
+- **Skill emphasis is tailored deterministically.** `_reorder_skills_for_job()`
+  promotes skills and categories matching the job's requirements toward the
+  top with a stable sort. Nothing is added, removed, or renamed, and no LLM
+  is involved.
+- **Wording is AI-tailored.** The summary is written per job, and each
+  existing bullet is rewritten per job to lead with impact and to use the
+  job description's terminology.
 
 ## Why hallucination can't slip through architecturally
 
-The LLM is never asked to write a bullet from nothing. `CV_BULLET_REWRITE_PROMPT_V1`
-only lets it *rewrite* an existing `ExperienceBullet` or `ProjectResult`,
-and it must reference that row's real database id
-(`RewrittenBullet.source_bullet_id`). That means a fabricated bullet isn't
-a "did the AI lie" problem to detect after the fact -- it's a "this id
-doesn't exist, or doesn't belong to the selected item" problem, which
-`cv_validation_service.validate_bullets` catches mechanically, the same
-way Step 2 never asks the LLM "do I match this job?".
+The LLM is never asked to write a bullet from nothing -- only to reword one
+the candidate already wrote, and only within limits a machine can check.
+`rewrite_bullets_for_job()` keys the rewrite request by positional ids it
+mints itself (`e0b1`, `p2b0`), so structurally the model *cannot* add a
+bullet, drop one, reorder them, or move one between roles: ids it invents
+are never looked up, and ids it fails to return keep their original text.
+
+What remains is the risk that a rewrite of a real bullet says something the
+original didn't, and that is checked deterministically by
+`validate_bullet_rewrite()` rather than trusted to the prompt. Because a
+bullet always has exactly one source row, a failed check needs no
+judgement call about how to repair it: **the rewrite is discarded and the
+candidate's stored text ships instead.** The worst case of the entire
+rewrite step -- a broken model, an unreachable API, malformed output,
+wholesale fabrication -- is the untailored, verbatim CV.
 
 Education, certifications, research, and achievements are **never passed
-through the LLM for rewriting at all** -- they're copied verbatim from the
-Career Profile straight into `CVContent`. There's no prompt for them in
-`ai/cv_prompts.py` on purpose. This is why they need no separate
-hallucination check: they *are* the verified source.
+through the LLM at all**. There is no prompt for them in `ai/cv_prompts.py`
+on purpose: they are copied verbatim from the Career Profile straight into
+`CVContent`, so they need no hallucination check -- they *are* the verified
+source.
 
 ## Deterministic validation (`cv_validation_service.py`)
 
-Runs on every generation, regardless of prompt quality:
+Runs on every generation, regardless of prompt quality.
 
-- **`UNSUPPORTED_SKILL`** -- a skill name in the generated skill list
-  doesn't resolve (via Step 2's `lookup_skill`/`skills_equivalent`) to
-  anything in the profile. Stripped from the output.
-- **`UNSUPPORTED_BULLET_SOURCE`** -- a rewritten bullet references a
-  `source_bullet_id` that doesn't exist, or doesn't belong to the
-  experience/project it claims to. Discarded.
-- **`UNSUPPORTED_METRIC`** -- the rewrite contains a number/percentage not
-  present in the original bullet (an `ExperienceBullet`'s text, or a
-  `ProjectResult`'s `description` + `metric` combined -- both fields
-  together count as that result's "original text", since a result's
-  quantified achievement legitimately lives in `metric`, separate from
-  `description`, per Step 1's design). Reverted to the original text.
-- **`UNSUPPORTED_TECHNOLOGY`** -- the rewrite mentions a technology not in
-  the original bullet AND not in that specific experience/project's
-  technology list, checked against both the profile's own vocabulary and
-  the job's requirement terms (so a wholly invented technology that
-  appears nowhere else in the profile -- e.g. the job wants AWS and the
-  profile has zero AWS mentions -- is still caught, not just technologies
-  that happen to be verified elsewhere). Reverted to the original text.
+Per rewritten bullet, checked against the bullet it came from. Any of
+these reverts that one bullet to its original text and is logged, not
+surfaced as a `CVVersion` warning -- a reverted bullet means the CV shipped
+the candidate's own words, which is not a defect to flag:
+
+- **`NEW_METRIC_IN_BULLET`** -- the rewrite contains a number or percentage
+  the original bullet does not.
+- **`NEW_TECHNOLOGY_IN_BULLET`** -- the rewrite names a technology the
+  original bullet does not, checked against the candidate's own skills
+  *and* the job's requirement terms. Both halves matter: a term the
+  candidate genuinely has elsewhere is still false in a bullet that never
+  mentioned it, and a term only the job asked for is exactly what a
+  keyword-matching model is tempted to insert.
+- **`BULLET_REWRITE_PADDED`** -- the rewrite exceeds the original's word
+  count by more than 50%. This is the check that catches unsupported
+  *scope* ("a service" becoming "a distributed system serving millions"),
+  which contains neither a new number nor a new technology name and would
+  otherwise pass.
+- **`EMPTY_BULLET_REWRITE`** -- the rewrite is blank.
+
+Dropping a detail the original had is deliberately *not* an error. The
+constraint is one-directional: a rewrite may say less than the original,
+never more.
+
+For the summary:
+
 - **`UNSUPPORTED_TECHNOLOGY_IN_SUMMARY`** -- the summary mentions a job
-  requirement term the profile doesn't support. Can't be mechanically
-  "reverted" (no single source row backs a summary), so if it survives one
-  correction retry, the summary falls back to a deterministic template
-  (`_fallback_summary`) built only from `plan.priority_skills`, which are
-  themselves already filtered to verified skills.
+  requirement term the profile doesn't support. Unlike a bullet this can't
+  be mechanically reverted (no single source row backs a summary), so if it
+  survives one correction retry the summary falls back to a deterministic
+  template (`_fallback_summary`) built only from `plan.priority_skills`,
+  which are themselves already filtered to verified skills.
 
-If content still has issues after the correction retry, generation does
-**not** fail outright -- the offending pieces are sanitized (stripped or
-reverted, as above) and every remaining issue is recorded in
-`CVVersion.warnings`. A CV with any warnings can never reach `validated`
-status; it stays `draft`. This is a deliberate choice: refusing to ship
-the whole CV over one bad bullet would waste two already-spent LLM calls
-and the rest of the (correct) content -- sanitizing preserves the
-verified-strengths-focused CV the spec explicitly allows ("may still be
-optimized around other verified strengths") while never shipping the
-specific unsupported claim.
+A summary issue that survives the retry is recorded in `CVVersion.warnings`,
+and a CV with any warnings can never reach `validated` status -- it stays
+`draft`. Generation does not fail outright: refusing to ship the whole CV
+over one sentence would waste the other two LLM calls and the rest of the
+correct content.
 
 ## Match score before/after
 
@@ -111,12 +136,14 @@ step is expected to only ever act on `status == approved`.
 
 ## LaTeX rendering (`cv_render_service.py`)
 
-The LLM produces `CVContentOutput` (validated Pydantic data) and nothing
-else. Python renders every section's LaTeX from that data via
+The LLM produces validated Pydantic data (`CVContentOutput`,
+`CVBulletRewriteOutput`) and nothing else -- it is never shown a template
+and never asked for LaTeX. Python renders every section's LaTeX from that
+data via
 `escape_latex()` (single-pass character substitution -- see the comment
 in `cv_render_service.py` for why a sequential `.replace()` chain would
-double-escape its own output), then substitutes exactly three pre-built
-blocks (`{{NAME}}`, `{{CONTACT_LINE}}`, `{{BODY}}`) into
+double-escape its own output), then substitutes exactly two pre-built
+blocks (`{{HEADER_BLOCK}}`, `{{BODY}}`) into
 `cv_templates/ats/ml_engineer.tex`. There is no code path where raw LLM
 output reaches `pdflatex`. See `cv_templates/README.md` for template
 details.

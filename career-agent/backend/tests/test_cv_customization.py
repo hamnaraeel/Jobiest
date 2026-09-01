@@ -3,7 +3,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.ai.client import AIConfigurationError
-from app.ai.cv_structured_outputs import CVContentOutput, CVPlanOutput
+from app.ai.cv_structured_outputs import (
+    CVBulletRewriteOutput,
+    CVContentOutput,
+    CVPlanOutput,
+    RewrittenBullet,
+)
 from app.models.enums import EntityType
 from app.schemas.cv_generation import CVPlan
 from app.services import cv_customization_service as svc
@@ -149,19 +154,146 @@ def test_assemble_cv_content_includes_full_profile_verbatim(client, rich_profile
     assert bullet.text == original_text
 
 
+# --- AI bullet rewriting ----------------------------------------------------
+#
+# Rewriting is allowed to change the candidate's wording to match the job
+# description, but never their facts. Every test below is really one
+# question: when the model does something other than a faithful reword,
+# does the CV still ship the candidate's own text?
+
+_ORIGINAL_BULLET = "Developed deep learning models for medical image segmentation using PyTorch."
+
+
+def _assembled_content(db_session, rich_profile, job):
+    ctx = get_relevant_career_data(db_session, rich_profile["profile"]["id"])
+    plan = CVPlan(target_role="Machine Learning Engineer", priority_skills=["PyTorch"], reasoning="x")
+    content_output = CVContentOutput(summary="Machine Learning Engineer with PyTorch experience.")
+    skill_categories = svc._reorder_skills_for_job(svc._master_skill_categories(ctx), job, plan)
+    return svc.assemble_cv_content(job, plan, content_output, skill_categories, ctx), plan, ctx
+
+
+def _rewrite(db_session, rich_profile, job, rewrites, client_factory=None):
+    content, plan, ctx = _assembled_content(db_session, rich_profile, job)
+    assert content.experience[0].bullets[0].text == _ORIGINAL_BULLET
+    fake = client_factory() if client_factory else _fake_client(
+        CVBulletRewriteOutput(bullets=[RewrittenBullet(id=i, text=t) for i, t in rewrites])
+    )
+    return svc.rewrite_bullets_for_job(fake, "gpt-4o-mini", job, plan, content, ctx)
+
+
+def test_rewrite_bullets_applies_a_faithful_reword(client, rich_profile, db_session, make_analyzed_job):
+    job = make_analyzed_job(requirements=_basic_requirements())
+    reworded = "Built deep learning models for medical image segmentation in PyTorch"
+
+    content, applied = _rewrite(db_session, rich_profile, job, [("e0b0", reworded)])
+
+    assert content.experience[0].bullets[0].text == reworded
+    assert [(o, r) for o, r, _ in applied] == [(_ORIGINAL_BULLET, reworded)]
+
+
+def test_rewrite_bullets_reverts_an_invented_metric(client, rich_profile, db_session, make_analyzed_job):
+    job = make_analyzed_job(requirements=_basic_requirements())
+    invented = "Built deep learning models for medical image segmentation in PyTorch, improving accuracy by 35%"
+
+    content, applied = _rewrite(db_session, rich_profile, job, [("e0b0", invented)])
+
+    assert content.experience[0].bullets[0].text == _ORIGINAL_BULLET
+    assert applied == []
+
+
+def test_rewrite_bullets_reverts_an_invented_technology(client, rich_profile, db_session, make_analyzed_job):
+    job = make_analyzed_job(requirements=_basic_requirements())
+    # "Computer Vision" is a requirement of this job and a skill on the
+    # profile -- being real elsewhere does not make it true of a bullet
+    # that never mentioned it.
+    invented = "Built deep learning computer vision models for medical image segmentation in PyTorch"
+
+    content, applied = _rewrite(db_session, rich_profile, job, [("e0b0", invented)])
+
+    assert content.experience[0].bullets[0].text == _ORIGINAL_BULLET
+    assert applied == []
+
+
+def test_rewrite_bullets_ignores_ids_it_was_never_given(client, rich_profile, db_session, make_analyzed_job):
+    job = make_analyzed_job(requirements=_basic_requirements())
+
+    content, applied = _rewrite(db_session, rich_profile, job, [("e7b7", "Led a team of 40 engineers")])
+
+    assert content.experience[0].bullets[0].text == _ORIGINAL_BULLET
+    assert applied == []
+
+
+def test_rewrite_bullets_keeps_originals_when_the_model_omits_them(client, rich_profile, db_session, make_analyzed_job):
+    job = make_analyzed_job(requirements=_basic_requirements())
+
+    content, applied = _rewrite(db_session, rich_profile, job, [])
+
+    assert content.experience[0].bullets[0].text == _ORIGINAL_BULLET
+    assert content.projects[0].bullets[0].text
+    assert applied == []
+
+
+def test_rewrite_bullets_survives_an_unavailable_model(client, rich_profile, db_session, make_analyzed_job):
+    """An LLM failure degrades to the verbatim CV -- it is never a
+    generation error, because the stored bullet is always a correct
+    answer."""
+
+    job = make_analyzed_job(requirements=_basic_requirements())
+
+    def exploding_client():
+        failing = MagicMock()
+        failing.chat.completions.parse.side_effect = RuntimeError("upstream is down")
+        return failing
+
+    content, applied = _rewrite(db_session, rich_profile, job, [], client_factory=exploding_client)
+
+    assert content.experience[0].bullets[0].text == _ORIGINAL_BULLET
+    assert applied == []
+
+
+def test_generate_cv_records_applied_rewrites_in_the_audit_trail(client, rich_profile, db_session, make_analyzed_job):
+    from app.models.cv_change import CVChange
+    from app.models.enums import CVChangeType, CVSectionType
+
+    job = make_analyzed_job(requirements=_basic_requirements())
+    reworded = "Built deep learning models for medical image segmentation in PyTorch"
+    plan_output, content_output, rewrite_output = _plan_and_content_for(rich_profile, [("e0b0", reworded)])
+
+    import app.services.cv_customization_service as svc_mod
+    original = svc_mod.get_ai_client
+    svc_mod.get_ai_client = lambda: _fake_client(plan_output, content_output, rewrite_output)
+    try:
+        cv = svc.generate_cv(db_session, job, compile_pdf_flag=False)
+    finally:
+        svc_mod.get_ai_client = original
+
+    assert cv.experience[0]["bullets"][0]["text"] == reworded
+    changes = db_session.query(CVChange).filter(
+        CVChange.cv_version_id == cv.id, CVChange.section == CVSectionType.EXPERIENCE
+    ).all()
+    assert [(c.change_type, c.original_text, c.customized_text) for c in changes] == [
+        (CVChangeType.REWRITTEN, _ORIGINAL_BULLET, reworded)
+    ]
+
+
 # --- CV version creation / end-to-end generation ----------------------------
 
 
-def _plan_and_content_for(rich_profile):
+def _plan_and_content_for(rich_profile, rewrites=()):
+    """The three structured outputs generate_cv() consumes, in order:
+    plan, summary, bullet rewrites. `rewrites` defaults to empty, which
+    leaves every bullet at the candidate's stored text."""
+
     plan_output = CVPlanOutput(target_role="Machine Learning Engineer", priority_skills=["PyTorch"], reasoning="Directly relevant.")
     content_output = CVContentOutput(summary="Machine Learning Engineer with experience in PyTorch and computer vision.")
-    return plan_output, content_output
+    rewrite_output = CVBulletRewriteOutput(bullets=[RewrittenBullet(id=i, text=t) for i, t in rewrites])
+    return plan_output, content_output, rewrite_output
 
 
 def test_generate_cv_creates_version_with_scores_and_traceability(client, rich_profile, db_session, make_analyzed_job):
     job = make_analyzed_job(requirements=_basic_requirements())
-    plan_output, content_output = _plan_and_content_for(rich_profile)
-    fake_client = _fake_client(plan_output, content_output)
+    plan_output, content_output, rewrite_output = _plan_and_content_for(rich_profile)
+    fake_client = _fake_client(plan_output, content_output, rewrite_output)
 
     import app.services.cv_customization_service as svc_mod
     original = svc_mod.get_ai_client
@@ -186,12 +318,12 @@ def test_generate_cv_versioning_never_overwrites(client, rich_profile, db_sessio
     import app.services.cv_customization_service as svc_mod
     original = svc_mod.get_ai_client
 
-    plan_output, content_output = _plan_and_content_for(rich_profile)
-    svc_mod.get_ai_client = lambda: _fake_client(plan_output, content_output)
+    plan_output, content_output, rewrite_output = _plan_and_content_for(rich_profile)
+    svc_mod.get_ai_client = lambda: _fake_client(plan_output, content_output, rewrite_output)
     try:
         cv1 = svc.generate_cv(db_session, job, compile_pdf_flag=False)
-        plan_output2, content_output2 = _plan_and_content_for(rich_profile)
-        svc_mod.get_ai_client = lambda: _fake_client(plan_output2, content_output2)
+        plan_output2, content_output2, rewrite_output2 = _plan_and_content_for(rich_profile)
+        svc_mod.get_ai_client = lambda: _fake_client(plan_output2, content_output2, rewrite_output2)
         cv2 = svc.generate_cv(db_session, job, compile_pdf_flag=False)
     finally:
         svc_mod.get_ai_client = original

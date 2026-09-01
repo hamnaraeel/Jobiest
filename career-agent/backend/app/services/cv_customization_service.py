@@ -1,24 +1,30 @@
-"""Orchestrates CV generation: plan -> content -> deterministic validation
--> assembly. Exactly two LLM calls (planning, content), each validated
-against a Pydantic schema and retried once on malformed output; content is
-additionally checked against the Career Profile and retried once more if
-it contains anything unsupported, then deterministically sanitized
-regardless of whether the retry fully fixed it. The score, the source
-traceability, and the final claim of "verified" never depend on what the
-LLM said about itself.
+"""Orchestrates CV generation: plan -> summary -> bullet rewrite ->
+deterministic validation -> assembly. Three LLM calls (planning, summary,
+bullet rewriting), each validated against a Pydantic schema and retried
+once on malformed output; the summary is additionally checked against the
+Career Profile and retried once more if it contains anything unsupported,
+then deterministically sanitized regardless of whether the retry fixed
+it. The score, the source traceability, and the final claim of "verified"
+never depend on what the LLM said about itself.
 
-Tailoring a CV to a specific job is deliberately narrow: the candidate's
-full profile -- every experience, every project, every existing bullet,
-all education/certifications/achievements/research, and their entire
-Technical Skills list -- is always included, verbatim, in
-assemble_cv_content(). Nothing here ever omits an entry as "not relevant
-enough" or rewrites a bullet's wording. Per the user's standing ~95%-
-preservation instruction, the only thing an LLM ever authors is the
-summary (generate_cv_content()); skill emphasis is tailored per job too,
-but deterministically by reordering the candidate's own stored skill
-categories toward the job's requirements -- never by an LLM selecting,
-adding, or dropping skills (see _master_skill_categories() and
-_reorder_skills_for_job())."""
+What tailoring does and does not touch:
+
+- Inclusion is never AI-decided. The candidate's full profile -- every
+  experience, every project, every existing bullet, all education/
+  certifications/achievements/research, and their entire Technical Skills
+  list -- is always assembled in assemble_cv_content(). Nothing here ever
+  omits an entry as "not relevant enough".
+- Bullet *wording* is AI-tailored, per job, by rewrite_bullets_for_job().
+  A rewrite may only restate what its source bullet already said; every
+  one is checked by cv_validation_service.validate_bullet_rewrite() and
+  reverted to the candidate's original text if it introduces a number, a
+  technology, or padding the original did not have. A bullet the model
+  drops, or returns under an id it was not given, also keeps its original
+  text -- so the worst case of this step is the verbatim CV.
+- Skill emphasis is tailored per job deterministically, by reordering the
+  candidate's own stored skill categories toward the job's requirements
+  -- never by an LLM selecting, adding, or dropping skills (see
+  _master_skill_categories() and _reorder_skills_for_job())."""
 
 import json
 import logging
@@ -29,8 +35,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai.client import STRUCTURED_OUTPUT_MAX_TOKENS, get_ai_client, get_ai_extra_params, get_ai_model
-from app.ai.cv_prompts import CV_PLAN_PROMPT_V1, CV_SUMMARY_PROMPT_V1
-from app.ai.cv_structured_outputs import CVContentOutput, CVPlanOutput
+from app.ai.cv_prompts import CV_BULLET_REWRITE_PROMPT_V1, CV_PLAN_PROMPT_V1, CV_SUMMARY_PROMPT_V1
+from app.ai.cv_structured_outputs import CVBulletRewriteOutput, CVContentOutput, CVPlanOutput
 from app.config import get_settings
 from app.models.cv_change import CVChange
 from app.models.cv_section import CVSection
@@ -52,7 +58,7 @@ from app.schemas.cv import (
 )
 from app.schemas.cv_generation import CVPlan, ValidationIssue
 from app.services import cv_comparison_service, cv_render_service
-from app.services.cv_validation_service import validate_summary
+from app.services.cv_validation_service import validate_bullet_rewrite, validate_summary
 from app.services.job_matching_service import (
     ProfileContext,
     compute_match,
@@ -198,6 +204,114 @@ def generate_cv_content(client, model: str, job: Job, plan: CVPlan, ctx: Profile
     return output, issues
 
 
+# --- AI bullet rewriting ---------------------------------------------------
+#
+# The one step that changes the candidate's own wording. It rewrites
+# existing bullets to align with the target job's vocabulary and to lead
+# with impact; it cannot add, drop, reorder, or reassign a bullet, and it
+# cannot introduce a fact -- rewrite_bullets_for_job() reverts to the
+# stored text on any validation issue, so every failure mode of this step
+# degrades to the untailored bullet rather than to a wrong one.
+
+
+def _bullet_slots(content: CVContent) -> list[tuple[str, str, CVSectionType, object]]:
+    """Every rewritable bullet on the assembled CV, as (id, original text,
+    section, bullet object). The id is positional and minted here rather
+    than taken from the database: project description bullets are produced
+    by splitting one description into sentences (see _project_bullets), so
+    several of them legitimately share a single source_id and a database id
+    could not address them individually."""
+
+    slots: list[tuple[str, str, CVSectionType, object]] = []
+    for ei, exp in enumerate(content.experience):
+        for bi, bullet in enumerate(exp.bullets):
+            slots.append((f"e{ei}b{bi}", bullet.text, CVSectionType.EXPERIENCE, bullet))
+    for pi, proj in enumerate(content.projects):
+        for bi, bullet in enumerate(proj.bullets):
+            slots.append((f"p{pi}b{bi}", bullet.text, CVSectionType.PROJECTS, bullet))
+    return slots
+
+
+def _rewrite_vocabulary(ctx: ProfileContext, job: Job) -> set[str]:
+    """Normalized technology terms validate_bullet_rewrite() polices: the
+    candidate's own skills (a term they have elsewhere is still a
+    fabrication in a bullet that never mentioned it) plus the job's
+    requirement skill names (the terms a keyword-matching model is most
+    tempted to slip in)."""
+
+    vocabulary = set(ctx.skill_index)
+    for req in job.requirements:
+        term = normalize_skill(req.skill_name or "")
+        if term:
+            vocabulary.add(term)
+    return vocabulary
+
+
+def rewrite_bullets_for_job(
+    client, model: str, job: Job, plan: CVPlan, content: CVContent, ctx: ProfileContext
+) -> tuple[CVContent, list[tuple[str, str, CVSectionType]]]:
+    """Rewrites the assembled CV's bullets in place, keeping the original
+    text for any bullet whose rewrite is missing, unchanged, or rejected.
+    Returns the content plus the rewrites that were actually applied, as
+    (original, rewritten, section) -- the audit trail generate_cv() records
+    as CVChange rows.
+
+    A failed LLM call is not fatal here. The whole point of rewriting an
+    existing bullet, rather than writing one, is that the stored text is
+    always a correct answer -- so an unreachable model or malformed output
+    produces the verbatim CV, not a generation error."""
+
+    slots = _bullet_slots(content)
+    if not slots:
+        return content, []
+
+    payload = json.dumps({
+        "job": {
+            "title": job.title,
+            "company": job.company,
+            "target_role": plan.target_role,
+            "requirements": _compact_requirements(job),
+        },
+        "bullets": [{"id": slot_id, "text": text} for slot_id, text, _, _ in slots],
+    })
+
+    try:
+        output: CVBulletRewriteOutput = _call_structured(
+            client, model, CV_BULLET_REWRITE_PROMPT_V1, payload, CVBulletRewriteOutput
+        )
+    except AIResponseError as exc:
+        logger.warning("bullet rewrite unavailable for job_id=%s, keeping original bullets: %s", job.id, exc)
+        return content, []
+
+    # Ids the model invented are dropped by construction: this is keyed by
+    # the ids we minted, and anything else never gets looked up.
+    proposed = {r.id: r.text for r in output.bullets}
+    vocabulary = _rewrite_vocabulary(ctx, job)
+
+    applied: list[tuple[str, str, CVSectionType]] = []
+    rejected = 0
+    for slot_id, original, section, bullet in slots:
+        rewritten = (proposed.get(slot_id) or "").strip()
+        if not rewritten or rewritten == original:
+            continue
+        issues = validate_bullet_rewrite(original, rewritten, vocabulary)
+        if issues:
+            rejected += 1
+            logger.info(
+                "rewrite rejected job_id=%s bullet=%s: %s",
+                job.id, slot_id, "; ".join(i.message for i in issues),
+            )
+            continue
+        bullet.text = rewritten
+        applied.append((original, rewritten, section))
+
+    logger.info(
+        "bullet rewrite job_id=%s bullets=%d applied=%d rejected=%d",
+        job.id, len(slots), len(applied), rejected,
+    )
+    return content, applied
+
+
 # --- Deterministic skill tailoring -----------------------------------------
 #
 # Per the user's standing "MASTER CV" instruction: the Technical Skills
@@ -311,10 +425,12 @@ def assemble_cv_content(
 ) -> CVContent:
     """The candidate's full profile, always -- every experience (with
     every bullet), every project (with every result), all research/
-    education/certifications/achievements, and every verified skill,
-    verbatim. Tailoring to `job` touches only `content.summary` and the
-    ordering of `skill_categories` (see _reorder_skills_for_job); nothing
-    here ever omits a profile entry or a skill based on the job."""
+    education/certifications/achievements, and every verified skill.
+    Bullet text is the stored text at this point: job-tailored rewording
+    is applied afterwards by rewrite_bullets_for_job(), so assembly stays
+    a pure copy of the profile and the rewrite step has an untouched
+    original to fall back to. Nothing here ever omits a profile entry or
+    a skill based on the job."""
 
     experience_entries = [
         CVExperienceEntry(
@@ -392,9 +508,10 @@ def _fallback_summary(plan: CVPlan, ctx: ProfileContext) -> str:
 
 def generate_cv(db: Session, job: Job, template_name: str = "ats/ml_engineer", compile_pdf_flag: bool = True) -> CVVersion:
     """The full Step 3 pipeline: JOB -> JOB MATCH -> CAREER PROFILE (in
-    full) -> CV plan (framing only) -> CV content (summary + skill
-    selection) -> validate -> reject unsupported claims -> LaTeX -> PDF ->
-    store CV version."""
+    full) -> CV plan (framing only) -> summary -> validate -> reject
+    unsupported claims -> assemble verbatim -> job-tailored bullet rewrite
+    (each rewrite validated, reverted on failure) -> LaTeX -> PDF -> store
+    CV version."""
 
     profile = get_default_profile(db)
     if profile is None:
@@ -422,6 +539,7 @@ def generate_cv(db: Session, job: Job, template_name: str = "ats/ml_engineer", c
     sanitized = {"summary": final_summary, "skills": skill_categories}
 
     content = assemble_cv_content(job, plan, output.model_copy(update={"summary": final_summary}), skill_categories, ctx)
+    content, bullet_rewrites = rewrite_bullets_for_job(client, model, job, plan, content, ctx)
 
     version_number = db.execute(
         select(func.count(CVVersion.id)).where(CVVersion.job_id == job.id)
@@ -473,7 +591,7 @@ def generate_cv(db: Session, job: Job, template_name: str = "ats/ml_engineer", c
     for i, section_type in enumerate(content.section_order):
         db.add(CVSection(cv_version_id=cv_version.id, section_type=section_type, sort_order=i))
 
-    for change in cv_comparison_service.build_cv_changes(plan, sanitized, ctx):
+    for change in cv_comparison_service.build_cv_changes(plan, sanitized, ctx, bullet_rewrites):
         change.cv_version_id = cv_version.id
         db.add(change)
 
@@ -486,7 +604,7 @@ def generate_cv(db: Session, job: Job, template_name: str = "ats/ml_engineer", c
     db.refresh(cv_version)
 
     logger.info(
-        "cv generated job_id=%s version=%d status=%s warnings=%d",
-        job.id, version_number, status.value, len(all_warnings),
+        "cv generated job_id=%s version=%d status=%s warnings=%d bullet_rewrites=%d",
+        job.id, version_number, status.value, len(all_warnings), len(bullet_rewrites),
     )
     return cv_version

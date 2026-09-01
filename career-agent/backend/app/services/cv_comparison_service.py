@@ -3,12 +3,15 @@
 calls the LLM -- a comparison is just a description of decisions already
 made deterministically or already recorded.
 
-Experience, projects, and section order are deliberately absent from this
-audit trail: the full profile is always included, verbatim, on every
-tailored CV (see cv_customization_service.assemble_cv_content), so there
-is never an "added"/"removed"/"reworded" experience or project, or a
-reordered section, to report. Only the two things that do vary per job --
-which skills are surfaced, and the summary wording -- are tracked."""
+Added/removed experiences and projects, and section order, are
+deliberately absent from this audit trail: the full profile is always
+included on every tailored CV (see
+cv_customization_service.assemble_cv_content), so there is never an
+"added" or "removed" experience or project, or a reordered section, to
+report. What does vary per job is tracked: which skills are surfaced, the
+summary wording, and any bullet whose wording the rewrite step actually
+changed (rewrites that were rejected are not recorded -- the CV shipped
+the candidate's original text, so nothing changed to report)."""
 
 from app.models.cv_change import CVChange
 from app.models.cv_version import CVVersion
@@ -18,9 +21,21 @@ from app.schemas.cv_generation import CVPlan
 from app.services.job_matching_service import ProfileContext, normalize_skill
 
 
-def build_cv_changes(plan: CVPlan, sanitized: dict, ctx: ProfileContext) -> list[CVChange]:
+def build_cv_changes(
+    plan: CVPlan,
+    sanitized: dict,
+    ctx: ProfileContext,
+    bullet_rewrites: list[tuple[str, str, CVSectionType]] | None = None,
+) -> list[CVChange]:
     changes: list[CVChange] = []
     profile = ctx.profile
+
+    for original, rewritten, section in bullet_rewrites or []:
+        changes.append(CVChange(
+            change_type=CVChangeType.REWRITTEN, section=section,
+            original_text=original, customized_text=rewritten,
+            reason="Reworded to match the target job's terminology.",
+        ))
 
     new_summary = sanitized.get("summary", "")
     if (profile.current_summary or "").strip() != (new_summary or "").strip():
